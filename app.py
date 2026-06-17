@@ -1,8 +1,8 @@
-
 import json
 import os
 import re
 from io import BytesIO
+from pathlib import Path
 from urllib.parse import urlparse
 
 import pandas as pd
@@ -20,10 +20,48 @@ from page_finder import find_likely_donor_pages
 # ============================================================
 
 st.set_page_config(
-    page_title="Donor/Funder Extraction Tool",
+    page_title="Climate Cardinals Donor/Funder Extraction Tool",
     page_icon="🌱",
     layout="wide"
 )
+
+
+# ============================================================
+# Brand assets
+# ============================================================
+
+APP_DIR = Path(__file__).parent if "__file__" in globals() else Path.cwd()
+LOGO_PATHS = [
+    APP_DIR / "assets" / "climate-cardinals-logo.png",
+    APP_DIR / "assets" / "logo.png",
+    APP_DIR / "climate-cardinals-logo.png",
+]
+ICON_PATHS = [
+    APP_DIR / "assets" / "climate-cardinals-icon.png",
+    APP_DIR / "assets" / "icon.png",
+    APP_DIR / "climate-cardinals-icon.png",
+]
+
+
+def first_existing_path(paths):
+    for path in paths:
+        try:
+            if path.exists():
+                return path
+        except Exception:
+            continue
+    return None
+
+
+BRAND_LOGO_PATH = first_existing_path(LOGO_PATHS)
+BRAND_ICON_PATH = first_existing_path(ICON_PATHS)
+
+# st.logo gives the deployed app/sidebar an official branded feel when supported.
+try:
+    if BRAND_LOGO_PATH and hasattr(st, "logo"):
+        st.logo(str(BRAND_LOGO_PATH), icon_image=str(BRAND_ICON_PATH) if BRAND_ICON_PATH else None)
+except Exception:
+    pass
 
 
 # ============================================================
@@ -78,9 +116,28 @@ AI_READING_OPTIONS = {
     }
 }
 
+RESULT_COLUMNS = [
+    "Source Organization",
+    "Donor/Funder Name",
+    "Donor Type",
+    "Relationship to Source",
+    "IRS/Form Context",
+    "Section",
+    "Year",
+    "Confidence",
+    "Notes",
+    "Source URL",
+    "Extraction Method",
+]
+
+RELATIONSHIP_FUNDER = "Likely funder/donor to source organization"
+RELATIONSHIP_GRANTEE = "Likely grantee/recipient"
+RELATIONSHIP_UNCLEAR = "Unclear / needs review"
+IRS_CONTEXT_NONE = "Not an IRS/Form 990 source"
+
 
 # ============================================================
-# Styling
+# Styling - cleaner Climate Cardinals-branded readable UI
 # ============================================================
 
 st.markdown(
@@ -89,20 +146,20 @@ st.markdown(
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
         :root {
-            --bg: #050816;
-            --panel: rgba(15, 23, 42, 0.68);
-            --panel-strong: rgba(15, 23, 42, 0.88);
-            --border: rgba(148, 163, 184, 0.22);
-            --border-strong: rgba(45, 212, 191, 0.42);
-            --text: #f8fafc;
-            --muted: #a8b3c7;
-            --accent: #ff5f57;
-            --accent-2: #ff3b52;
-            --cyan: #38bdf8;
-            --green: #22c55e;
-            --teal: #2dd4bf;
-            --gold: #fbbf24;
-            --purple: #a78bfa;
+            --cc-red: #ef4444;
+            --cc-red-dark: #b91c1c;
+            --cc-green: #16a34a;
+            --cc-teal: #0f766e;
+            --cc-ink: #102033;
+            --cc-muted: #475569;
+            --cc-subtle: #64748b;
+            --cc-bg: #f7faf9;
+            --cc-card: #ffffff;
+            --cc-soft: #eef7f1;
+            --cc-border: #d8e4df;
+            --cc-border-strong: #b9d5c8;
+            --cc-warning: #92400e;
+            --cc-warning-bg: #fffbeb;
         }
 
         html, body, [class*="css"] {
@@ -111,195 +168,162 @@ st.markdown(
 
         .stApp {
             background:
-                radial-gradient(circle at 8% 6%, rgba(56, 189, 248, 0.24), transparent 30%),
-                radial-gradient(circle at 92% 12%, rgba(34, 197, 94, 0.18), transparent 30%),
-                radial-gradient(circle at 40% 65%, rgba(167, 139, 250, 0.10), transparent 33%),
-                radial-gradient(circle at 60% 105%, rgba(45, 212, 191, 0.15), transparent 38%),
-                linear-gradient(135deg, #050816 0%, #07111c 52%, #071b16 100%);
-            background-attachment: fixed;
-            color: var(--text);
-        }
-
-        .stApp::before {
-            content: "";
-            position: fixed;
-            inset: 0;
-            pointer-events: none;
-            background:
-                linear-gradient(115deg, transparent 0%, rgba(255,255,255,0.025) 45%, transparent 70%),
-                radial-gradient(circle at 20% 20%, rgba(56,189,248,0.10), transparent 22%);
-            animation: backgroundFloat 14s ease-in-out infinite alternate;
-            z-index: 0;
-        }
-
-        @keyframes backgroundFloat {
-            0% { opacity: 0.45; transform: translateY(0) scale(1); }
-            100% { opacity: 0.8; transform: translateY(-14px) scale(1.03); }
+                radial-gradient(circle at 7% 0%, rgba(22, 163, 74, 0.10), transparent 28%),
+                radial-gradient(circle at 100% 0%, rgba(239, 68, 68, 0.08), transparent 30%),
+                linear-gradient(180deg, #f8fbfa 0%, #eef7f1 100%);
+            color: var(--cc-ink);
         }
 
         .block-container {
-            padding-top: 2rem;
+            padding-top: 1.6rem;
             padding-bottom: 3rem;
-            max-width: 1500px;
-            position: relative;
-            z-index: 1;
+            max-width: 1420px;
         }
 
         header[data-testid="stHeader"] {
-            background: rgba(5, 8, 22, 0.34);
-            backdrop-filter: blur(18px);
-            -webkit-backdrop-filter: blur(18px);
+            background: rgba(248, 251, 250, 0.86);
+            border-bottom: 1px solid rgba(216, 228, 223, 0.85);
         }
 
-        .hero-card {
+        h1, h2, h3, h4, h5, h6 {
+            color: var(--cc-ink) !important;
+            letter-spacing: -0.03em;
+        }
+
+        p, li, label, .stMarkdown, .stText {
+            color: var(--cc-ink);
+        }
+
+        .brand-shell {
+            background: var(--cc-card);
+            border: 1px solid var(--cc-border);
+            border-radius: 24px;
+            padding: 1.35rem 1.5rem 1.45rem 1.5rem;
+            box-shadow: 0 18px 45px rgba(15, 32, 51, 0.08);
+            margin-bottom: 1rem;
             position: relative;
             overflow: hidden;
-            padding: 2.7rem 2.85rem;
-            border-radius: 32px;
-            background:
-                linear-gradient(135deg, rgba(15, 23, 42, 0.93), rgba(15, 23, 42, 0.58)),
-                linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(34, 197, 94, 0.10));
-            border: 1px solid rgba(148, 163, 184, 0.24);
-            box-shadow:
-                0 34px 110px rgba(0, 0, 0, 0.45),
-                0 0 80px rgba(45, 212, 191, 0.08),
-                inset 0 1px 0 rgba(255, 255, 255, 0.10);
-            backdrop-filter: blur(26px) saturate(155%);
-            -webkit-backdrop-filter: blur(26px) saturate(155%);
-            margin-bottom: 1.4rem;
         }
 
-        .hero-card::before {
+        .brand-shell::before {
             content: "";
             position: absolute;
-            top: -50%;
-            left: -25%;
-            width: 78%;
-            height: 130%;
-            background: linear-gradient(
-                120deg,
-                transparent 0%,
-                rgba(255, 255, 255, 0.16) 45%,
-                transparent 70%
-            );
-            transform: rotate(14deg);
-            animation: glassSweep 9s ease-in-out infinite;
-            pointer-events: none;
+            inset: 0 0 auto 0;
+            height: 7px;
+            background: linear-gradient(90deg, var(--cc-red), var(--cc-green), var(--cc-teal));
         }
 
-        .hero-card::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            background:
-                radial-gradient(circle at 18% 12%, rgba(56,189,248,0.18), transparent 24%),
-                radial-gradient(circle at 84% 80%, rgba(45,212,191,0.14), transparent 28%);
-            pointer-events: none;
-            animation: heroPulse 7s ease-in-out infinite alternate;
-        }
-
-        @keyframes glassSweep {
-            0%, 72%, 100% { transform: translateX(-35%) rotate(14deg); opacity: 0; }
-            18% { opacity: 1; }
-            38% { transform: translateX(150%) rotate(14deg); opacity: 0; }
-        }
-
-        @keyframes heroPulse {
-            from { opacity: 0.35; }
-            to { opacity: 0.72; }
+        .brand-eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.35rem 0.65rem;
+            border-radius: 999px;
+            background: #fef2f2;
+            color: var(--cc-red-dark);
+            border: 1px solid #fecaca;
+            font-weight: 800;
+            font-size: 0.82rem;
+            margin-bottom: 0.65rem;
         }
 
         .hero-title {
-            position: relative;
-            z-index: 1;
-            font-size: clamp(2.25rem, 4vw, 3.7rem);
+            font-size: clamp(2rem, 3.2vw, 3.1rem);
             font-weight: 900;
-            letter-spacing: -0.065em;
-            margin-bottom: 0.68rem;
-            color: #ffffff;
-            text-shadow: 0 12px 46px rgba(56, 189, 248, 0.22);
+            line-height: 1.04;
+            letter-spacing: -0.055em;
+            margin: 0.1rem 0 0.7rem 0;
+            color: var(--cc-ink);
         }
 
         .hero-subtitle {
-            position: relative;
-            z-index: 1;
-            font-size: 1.06rem;
-            color: #d7e2f3;
+            font-size: 1.05rem;
+            color: var(--cc-muted);
             max-width: 980px;
-            line-height: 1.65;
+            line-height: 1.62;
+            font-weight: 500;
         }
 
         .pill-row {
-            position: relative;
-            z-index: 1;
             display: flex;
-            gap: 0.65rem;
+            gap: 0.55rem;
             flex-wrap: wrap;
-            margin-top: 1.45rem;
+            margin-top: 1rem;
         }
 
         .pill {
-            border: 1px solid rgba(45, 212, 191, 0.38);
-            background: rgba(20, 184, 166, 0.16);
-            color: #d7fffb;
+            border: 1px solid var(--cc-border-strong);
+            background: #f0fdf4;
+            color: #14532d;
             border-radius: 999px;
-            padding: 0.46rem 0.86rem;
-            font-size: 0.8rem;
-            font-weight: 850;
-            box-shadow:
-                0 0 26px rgba(45, 212, 191, 0.08),
-                inset 0 1px 0 rgba(255, 255, 255, 0.07);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
+            padding: 0.42rem 0.75rem;
+            font-size: 0.82rem;
+            font-weight: 800;
         }
 
-        .step-card, .info-card, .ai-panel, .recommendation-card, .option-card {
-            background:
-                linear-gradient(135deg, rgba(15, 23, 42, 0.76), rgba(15, 23, 42, 0.46));
-            border: 1px solid rgba(148, 163, 184, 0.20);
-            border-radius: 22px;
-            padding: 1rem 1.1rem;
-            box-shadow:
-                0 18px 54px rgba(0,0,0,0.24),
-                inset 0 1px 0 rgba(255,255,255,0.05);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
+        .cc-logo-wrap {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 132px;
+            border: 1px solid var(--cc-border);
+            border-radius: 20px;
+            background: #ffffff;
+            padding: 1rem;
+        }
+
+        .brand-fallback {
+            font-size: 1.25rem;
+            font-weight: 900;
+            color: var(--cc-red-dark);
+            text-align: center;
+            line-height: 1.1;
+        }
+
+        .step-card, .info-card, .ai-panel, .recommendation-card, .option-card, .review-note {
+            background: var(--cc-card);
+            border: 1px solid var(--cc-border);
+            border-radius: 18px;
+            padding: 1rem 1.05rem;
+            box-shadow: 0 10px 28px rgba(15, 32, 51, 0.06);
         }
 
         .step-card { min-height: 122px; }
 
         .step-number {
             display: inline-flex;
-            width: 28px;
-            height: 28px;
+            width: 30px;
+            height: 30px;
             border-radius: 999px;
             align-items: center;
             justify-content: center;
             font-weight: 900;
-            background: rgba(56, 189, 248, 0.16);
-            border: 1px solid rgba(56, 189, 248, 0.38);
-            color: #e0f2fe;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: var(--cc-red-dark);
             margin-bottom: 0.45rem;
         }
 
         .step-title, .card-title {
             font-weight: 900;
-            color: #f8fafc;
-            margin-bottom: 0.26rem;
+            color: var(--cc-ink);
+            margin-bottom: 0.28rem;
         }
 
         .step-copy, .card-copy {
-            color: #a8b3c7;
-            font-size: 0.91rem;
-            line-height: 1.5;
+            color: var(--cc-muted);
+            font-size: 0.96rem;
+            line-height: 1.55;
+            font-weight: 500;
         }
 
         .small-muted {
-            color: var(--muted);
-            font-size: 0.91rem;
-            line-height: 1.48;
-            margin-top: 0.3rem;
-            margin-bottom: 0.35rem;
+            color: var(--cc-muted);
+            font-size: 0.96rem;
+            line-height: 1.52;
+            margin-top: 0.35rem;
+            margin-bottom: 0.45rem;
+            font-weight: 500;
         }
 
         .ai-ready-badge, .ai-off-badge {
@@ -307,64 +331,55 @@ st.markdown(
             align-items: center;
             gap: 0.4rem;
             border-radius: 999px;
-            padding: 0.38rem 0.75rem;
-            font-size: 0.78rem;
+            padding: 0.38rem 0.72rem;
+            font-size: 0.82rem;
             font-weight: 900;
             margin-bottom: 0.55rem;
         }
 
         .ai-ready-badge {
-            border: 1px solid rgba(34, 197, 94, 0.44);
-            background: rgba(34, 197, 94, 0.14);
-            color: #bbf7d0;
-            box-shadow: 0 0 34px rgba(34,197,94,0.09);
+            border: 1px solid #bbf7d0;
+            background: #f0fdf4;
+            color: #166534;
         }
 
         .ai-off-badge {
-            border: 1px solid rgba(251, 191, 36, 0.38);
-            background: rgba(251, 191, 36, 0.13);
-            color: #fde68a;
+            border: 1px solid #fde68a;
+            background: #fffbeb;
+            color: var(--cc-warning);
         }
 
         .ai-panel {
-            border-color: rgba(45, 212, 191, 0.26);
-            position: relative;
-            overflow: hidden;
-            margin-top: 0.3rem;
-            margin-bottom: 0.7rem;
+            border-color: var(--cc-border-strong);
+            margin-top: 0.6rem;
+            margin-bottom: 0.75rem;
         }
-
-        .ai-panel::before {
-            content: "";
-            position: absolute;
-            inset: -1px;
-            background: linear-gradient(90deg, rgba(56,189,248,0.18), rgba(45,212,191,0.08), rgba(251,191,36,0.12));
-            opacity: 0.22;
-            pointer-events: none;
-        }
-
-        .ai-panel > * { position: relative; z-index: 1; }
 
         .recommendation-card {
-            border-color: rgba(251, 191, 36, 0.26);
-            background:
-                linear-gradient(135deg, rgba(120, 53, 15, 0.24), rgba(15, 23, 42, 0.60));
-            margin-top: 0.7rem;
+            border-color: #fecaca;
+            background: #fff7f7;
+            margin-top: 0.75rem;
+        }
+
+        .review-note {
+            background: #f8fafc;
+            border-color: #cbd5e1;
+            margin: 0.8rem 0;
         }
 
         .mini-label {
             text-transform: uppercase;
             letter-spacing: 0.08em;
-            font-size: 0.72rem;
+            font-size: 0.73rem;
             font-weight: 900;
-            color: #94a3b8;
+            color: var(--cc-subtle);
             margin-bottom: 0.25rem;
         }
 
         .mini-value {
             font-size: 1.02rem;
             font-weight: 900;
-            color: #f8fafc;
+            color: var(--cc-ink);
             margin-bottom: 0.25rem;
         }
 
@@ -373,108 +388,102 @@ st.markdown(
         div[data-testid="stFileUploader"] label,
         div[data-testid="stSelectbox"] label,
         div[data-testid="stCheckbox"] label {
-            color: #e2e8f0 !important;
-            font-weight: 780 !important;
+            color: var(--cc-ink) !important;
+            font-weight: 800 !important;
+            font-size: 0.98rem !important;
         }
 
         div[data-baseweb="input"] {
-            border-radius: 16px;
-            background: rgba(30, 41, 59, 0.74) !important;
-            border: 1px solid rgba(148, 163, 184, 0.18);
-            box-shadow:
-                inset 0 1px 0 rgba(255, 255, 255, 0.04),
-                0 14px 34px rgba(0, 0, 0, 0.18);
+            border-radius: 14px;
+            background: #ffffff !important;
+            border: 1px solid #cbd5e1 !important;
+            box-shadow: 0 3px 10px rgba(15, 32, 51, 0.04);
         }
 
         div[data-baseweb="input"]:focus-within {
-            border-color: rgba(56, 189, 248, 0.50);
-            box-shadow:
-                0 0 0 3px rgba(56, 189, 248, 0.10),
-                0 16px 42px rgba(56, 189, 248, 0.08);
+            border-color: var(--cc-teal) !important;
+            box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.13);
         }
 
-        input { color: #f8fafc !important; font-weight: 590 !important; }
+        input { color: var(--cc-ink) !important; font-weight: 600 !important; }
 
         div[data-baseweb="select"] > div {
-            border-radius: 16px !important;
-            background: rgba(30, 41, 59, 0.74) !important;
-            border: 1px solid rgba(148, 163, 184, 0.18) !important;
+            border-radius: 14px !important;
+            background: #ffffff !important;
+            border: 1px solid #cbd5e1 !important;
+            color: var(--cc-ink) !important;
         }
 
         .stButton > button {
-            border-radius: 16px;
-            border: 1px solid rgba(148, 163, 184, 0.22);
-            font-weight: 870;
-            transition: all 0.17s ease-in-out;
-            padding: 0.72rem 1.08rem;
-            background: rgba(15, 23, 42, 0.78);
-            color: #f8fafc;
-            box-shadow:
-                0 12px 30px rgba(0, 0, 0, 0.22),
-                inset 0 1px 0 rgba(255, 255, 255, 0.06);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
+            border-radius: 14px;
+            border: 1px solid #cbd5e1;
+            font-weight: 850;
+            transition: all 0.14s ease-in-out;
+            padding: 0.7rem 1.02rem;
+            background: #ffffff;
+            color: var(--cc-ink);
+            box-shadow: 0 6px 16px rgba(15, 32, 51, 0.06);
         }
 
         .stButton > button:hover {
-            transform: translateY(-2px);
-            border-color: rgba(45, 212, 191, 0.64);
-            box-shadow:
-                0 18px 42px rgba(20, 184, 166, 0.15),
-                inset 0 1px 0 rgba(255, 255, 255, 0.09);
+            transform: translateY(-1px);
+            border-color: var(--cc-teal);
+            box-shadow: 0 10px 24px rgba(15, 118, 110, 0.12);
         }
 
         .stButton > button[kind="primary"] {
-            background: linear-gradient(135deg, #ff6b5f, #ff3555) !important;
+            background: linear-gradient(135deg, var(--cc-red), var(--cc-red-dark)) !important;
             color: white !important;
-            border: 1px solid rgba(255, 255, 255, 0.16) !important;
-            box-shadow:
-                0 18px 42px rgba(255, 95, 87, 0.28),
-                0 0 52px rgba(255, 59, 82, 0.12),
-                inset 0 1px 0 rgba(255, 255, 255, 0.20);
+            border: 1px solid var(--cc-red-dark) !important;
+            box-shadow: 0 10px 24px rgba(185, 28, 28, 0.18);
         }
 
         div[data-testid="stMetric"] {
-            background:
-                linear-gradient(135deg, rgba(15, 23, 42, 0.86), rgba(15, 23, 42, 0.60));
-            border: 1px solid rgba(148, 163, 184, 0.22);
+            background: var(--cc-card);
+            border: 1px solid var(--cc-border);
             padding: 1rem;
-            border-radius: 20px;
-            box-shadow: 0 16px 44px rgba(0, 0, 0, 0.24);
-            backdrop-filter: blur(18px);
-            -webkit-backdrop-filter: blur(18px);
+            border-radius: 18px;
+            box-shadow: 0 8px 22px rgba(15, 32, 51, 0.06);
         }
 
-        div[data-testid="stMetricLabel"] { color: #94a3b8; font-weight: 760; }
-        div[data-testid="stMetricValue"] { color: #f8fafc; font-weight: 900; }
+        div[data-testid="stMetricLabel"] { color: var(--cc-muted); font-weight: 800; }
+        div[data-testid="stMetricValue"] { color: var(--cc-ink); font-weight: 900; }
 
         div[data-testid="stAlert"] {
-            border-radius: 18px;
-            border: 1px solid rgba(148, 163, 184, 0.16);
-            backdrop-filter: blur(14px);
-            -webkit-backdrop-filter: blur(14px);
+            border-radius: 16px;
+            border: 1px solid var(--cc-border);
         }
 
         div[data-testid="stDataFrame"] {
-            border-radius: 18px;
+            border-radius: 16px;
             overflow: hidden;
-            border: 1px solid rgba(148, 163, 184, 0.18);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.26);
+            border: 1px solid var(--cc-border);
+            box-shadow: 0 12px 32px rgba(15, 32, 51, 0.08);
         }
 
         a {
-            color: #38bdf8 !important;
+            color: #0f766e !important;
             text-decoration-thickness: 1px !important;
             text-underline-offset: 4px !important;
+            font-weight: 700;
         }
 
         hr {
-            border-color: rgba(148, 163, 184, 0.16);
-            margin-top: 2rem;
-            margin-bottom: 1.6rem;
+            border-color: var(--cc-border);
+            margin-top: 1.8rem;
+            margin-bottom: 1.4rem;
         }
 
-        h2, h3 { letter-spacing: -0.035em; color: #f8fafc; }
+        .stCaption, [data-testid="stCaptionContainer"] {
+            color: var(--cc-muted) !important;
+            font-size: 0.95rem !important;
+            line-height: 1.5 !important;
+        }
+
+        section[data-testid="stSidebar"] {
+            background: #ffffff;
+            border-right: 1px solid var(--cc-border);
+        }
     </style>
     """,
     unsafe_allow_html=True
@@ -485,20 +494,43 @@ st.markdown(
 # Header
 # ============================================================
 
+hero_left, hero_right = st.columns([4.6, 1.35], vertical_alignment="center")
+
+with hero_left:
+    st.markdown(
+        """
+        <div class="brand-shell">
+            <div class="brand-eyebrow">Climate Cardinals research tool</div>
+            <div class="hero-title">Climate Cardinals Donor/Funder Extraction Tool</div>
+            <div class="hero-subtitle">
+                Built for Climate Cardinals donor and funder research. Find public donor, funder,
+                sponsor, supporter, annual report, PDF, and Form 990 sources, then export a clean
+                reviewable CSV for research and outreach workflows.
+            </div>
+            <div class="pill-row">
+                <span class="pill">AI-assisted discovery</span>
+                <span class="pill">AI extraction</span>
+                <span class="pill">PDF + Form 990 review</span>
+                <span class="pill">Accessible CSV export</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+with hero_right:
+    st.markdown('<div class="cc-logo-wrap">', unsafe_allow_html=True)
+    if BRAND_LOGO_PATH:
+        st.image(str(BRAND_LOGO_PATH), use_container_width=True)
+    else:
+        st.markdown('<div class="brand-fallback">Climate<br>Cardinals</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
 st.markdown(
     """
-    <div class="hero-card">
-        <div class="hero-title">Donor/Funder Extraction Tool</div>
-        <div class="hero-subtitle">
-            Find donor, funder, sponsor, supporter, and contributor pages from a homepage,
-            then extract names into a clean reviewable table and downloadable CSV.
-        </div>
-        <div class="pill-row">
-            <span class="pill">AI-assisted discovery</span>
-            <span class="pill">AI extraction</span>
-            <span class="pill">PDF support</span>
-            <span class="pill">Reviewable CSV export</span>
-        </div>
+    <div class="review-note">
+        <strong>Internal research reminder:</strong> This tool speeds up donor/funder research, but results should still be reviewed before outreach, reporting, or publishing.
+        IRS/Form 990 entries now include relationship labels to help distinguish funders from grantees or recipients.
     </div>
     """,
     unsafe_allow_html=True
@@ -524,8 +556,8 @@ with st.expander("How to use this tool", expanded=False):
             """
             <div class="step-card">
                 <div class="step-number">2</div>
-                <div class="step-title">Let the app find or read pages</div>
-                <div class="step-copy">The tool can search for likely donor/funder pages and use AI to read messy source text more intelligently.</div>
+                <div class="step-title">Find or read sources</div>
+                <div class="step-copy">The app searches likely donor, funder, sponsor, supporter, annual report, PDF, and Form 990 sources.</div>
             </div>
             """,
             unsafe_allow_html=True
@@ -537,7 +569,7 @@ with st.expander("How to use this tool", expanded=False):
             <div class="step-card">
                 <div class="step-number">3</div>
                 <div class="step-title">Review and download</div>
-                <div class="step-copy">Check the table, review confidence and notes, then download a CSV for your tracker.</div>
+                <div class="step-copy">Check confidence, source labels, relationship labels, and notes before downloading the CSV.</div>
             </div>
             """,
             unsafe_allow_html=True
@@ -616,7 +648,7 @@ def donor_extraction_schema():
         "properties": {
             "source_assessment": {
                 "type": "string",
-                "description": "Brief assessment of whether the page/report appears to contain donor/funder/supporter/sponsor names."
+                "description": "Brief assessment of whether the page/report appears to contain donor/funder/supporter/sponsor names, including IRS/Form 990 direction-of-funding concerns when relevant."
             },
             "donors": {
                 "type": "array",
@@ -626,12 +658,20 @@ def donor_extraction_schema():
                     "properties": {
                         "name": {"type": "string"},
                         "donor_type": {"type": "string"},
+                        "relationship_to_source": {
+                            "type": "string",
+                            "enum": [RELATIONSHIP_FUNDER, RELATIONSHIP_GRANTEE, RELATIONSHIP_UNCLEAR]
+                        },
+                        "irs_form_context": {"type": "string"},
                         "section": {"type": "string"},
                         "year": {"type": "string"},
                         "confidence": {"type": "string", "enum": ["High", "Medium", "Low"]},
                         "notes": {"type": "string"}
                     },
-                    "required": ["name", "donor_type", "section", "year", "confidence", "notes"]
+                    "required": [
+                        "name", "donor_type", "relationship_to_source", "irs_form_context",
+                        "section", "year", "confidence", "notes"
+                    ]
                 }
             }
         },
@@ -723,6 +763,107 @@ def clean_lines(text):
 
 
 # ============================================================
+# IRS/Form 990 helpers
+# ============================================================
+
+def detect_irs_form_context(source_url="", text=""):
+    lower_url = str(source_url or "").lower()
+    lower_text = str(text or "").lower()
+    combined = f"{lower_url} {lower_text[:20000]}"
+
+    irs_url_signals = [
+        "irs", "form-990", "form990", "990-pf", "990pf", "990_pf",
+        "propublica", "nonprofitexplorer", "taxexemptworld", "causeiq",
+        "guidestar", "candid", "990finder"
+    ]
+    irs_text_signals = [
+        "form 990", "form990", "990-pf", "990 pf", "return of private foundation",
+        "department of the treasury", "internal revenue service", "schedule i",
+        "schedule of contributors", "grants and other assistance",
+        "grants paid", "contributions, gifts, grants paid", "recipient organization",
+        "recipient's name", "grantee", "recipient"
+    ]
+
+    is_irs_like = any(signal in lower_url for signal in irs_url_signals) or any(signal in lower_text for signal in irs_text_signals)
+
+    if not is_irs_like:
+        return {
+            "is_irs": False,
+            "label": IRS_CONTEXT_NONE,
+            "default_relationship": RELATIONSHIP_FUNDER,
+            "warning": ""
+        }
+
+    grants_paid_signals = [
+        "grants and other assistance", "grants paid", "contributions, gifts, grants paid",
+        "schedule i", "part ii grants", "part xv", "recipient organization",
+        "recipient's name", "name and address of recipient", "paid during the year"
+    ]
+    foundation_signals = [
+        "990-pf", "990 pf", "return of private foundation", "private foundation",
+        "form 990-pf", "part xv"
+    ]
+
+    if any(signal in combined for signal in foundation_signals) and any(signal in combined for signal in grants_paid_signals):
+        return {
+            "is_irs": True,
+            "label": "Form 990-PF / foundation grants paid context",
+            "default_relationship": RELATIONSHIP_GRANTEE,
+            "warning": "This appears to be a foundation filing where listed organizations may be grant recipients, not donors to the source organization."
+        }
+
+    if any(signal in combined for signal in grants_paid_signals):
+        return {
+            "is_irs": True,
+            "label": "Form 990 / grants paid or Schedule I context",
+            "default_relationship": RELATIONSHIP_GRANTEE,
+            "warning": "This appears to be a grants-paid section. Listed organizations may be grantees/recipients, not funders."
+        }
+
+    if "schedule b" in combined or "schedule of contributors" in combined:
+        return {
+            "is_irs": True,
+            "label": "Form 990 contributor schedule context",
+            "default_relationship": RELATIONSHIP_FUNDER,
+            "warning": "This appears to involve contributors, but entries still need review because public filings can be incomplete or context-specific."
+        }
+
+    return {
+        "is_irs": True,
+        "label": "Possible IRS/Form 990 source — funding direction unclear",
+        "default_relationship": RELATIONSHIP_UNCLEAR,
+        "warning": "This appears to be an IRS/Form 990 source. Review whether each entry is a funder, grantee, or unclear."
+    }
+
+
+def normalize_relationship(value, fallback=RELATIONSHIP_FUNDER):
+    value = str(value or "").strip()
+    allowed = {RELATIONSHIP_FUNDER, RELATIONSHIP_GRANTEE, RELATIONSHIP_UNCLEAR}
+    if value in allowed:
+        return value
+
+    lower = value.lower()
+    if "grantee" in lower or "recipient" in lower:
+        return RELATIONSHIP_GRANTEE
+    if "unclear" in lower or "review" in lower:
+        return RELATIONSHIP_UNCLEAR
+    if "funder" in lower or "donor" in lower or "sponsor" in lower:
+        return RELATIONSHIP_FUNDER
+
+    return fallback
+
+
+def is_irs_candidate_source(candidate):
+    text = candidate_text_blob(candidate)
+    path = url_path_lower(candidate.get("url", ""))
+    return any(signal in text or signal in path for signal in [
+        "form 990", "form-990", "form990", "990-pf", "990pf",
+        "irs", "schedule i", "propublica", "nonprofit explorer",
+        "grants paid", "foundation filing"
+    ])
+
+
+# ============================================================
 # AI extraction
 # ============================================================
 
@@ -735,28 +876,44 @@ def ai_extract_possible_donors(text, source_org, source_url, model_name, max_chu
     chunks = chunk_text(text, max_chars=42000, overlap=1200, max_chunks=max_chunks)
     all_rows = []
     assessments = []
+    irs_context = detect_irs_form_context(source_url, text)
 
     for idx, chunk in enumerate(chunks, start=1):
         prompt = f"""
 You are helping Climate Cardinals review public nonprofit donor/funder sources.
 
 Task:
-Extract donor, funder, sponsor, supporter, contributor, foundation, corporate partner, agency donor, annual fund donor, named sponsor, or named grantor entries from the source text.
+Extract donor, funder, sponsor, supporter, contributor, foundation, corporate partner, agency donor, annual fund donor, named sponsor, named grantor, or IRS/Form 990 grant-related entries from the source text.
 
-Important rules:
-- Only include names that clearly appear to be donors/funders/sponsors/supporters/contributors/grantors.
+Important precision rules:
+- Only include names that clearly appear to be donors/funders/sponsors/supporters/contributors/grantors OR names that appear in IRS/Form 990 grant-related tables and need relationship review.
 - Include corporate/foundation partners only if the source describes them as donating, funding, granting, sponsoring, contributing, underwriting, or providing financial/product support.
-- Do NOT include staff names, board members, advisory councils, youth councils, program participants, partner organizations, media features, press outlets, article names, program names, event names, social links, addresses, emails, navigation items, menu items, generic headings, or award/recognition lists.
+- Do NOT include staff names, board members, advisory councils, youth councils, program participants, ordinary program partners, media features, press outlets, article names, program names, event names, social links, addresses, emails, navigation items, menu items, generic headings, or award/recognition lists.
 - Do NOT include media outlets such as Forbes, The Guardian, Vice, Washington Post, Read It, etc. unless the text explicitly says they donated/funded/sponsored.
 - Do NOT include program partners such as UNICEF, Yale, Google, etc. unless the text explicitly says they donated/funded/sponsored.
 - If a line is just a tier heading, use it as the Section, but do not include it as a donor name.
-- If the source does not clearly contain a donor/funder/sponsor list, return an empty donors list.
+- If the source does not clearly contain a donor/funder/sponsor list or IRS/Form 990 grant-related list, return an empty donors list.
 - Prefer precision over quantity. It is better to return fewer clean names than many noisy names.
 - Keep names exactly as written when possible.
-- Use confidence:
-  High = clearly a donor/funder/sponsor/supporter/contributor name.
-  Medium = likely but context is not perfect.
-  Low = uncertain but possibly relevant.
+
+IRS/Form 990 relationship rules:
+- Detect whether the source appears to be an IRS/Form 990/Form 990-PF/Foundation filing/Schedule I/grants paid source.
+- IRS/Form 990 sources can show money flowing OUT of an organization to grantees/recipients, not money coming IN as donors.
+- Do NOT label grantees/recipients as donors/funders.
+- If the source is a foundation filing or 990-PF and names are listed under grants paid, contributions paid, grants and other assistance, recipient organization, or grantee sections, classify those names as "{RELATIONSHIP_GRANTEE}".
+- If the source is for the researched source organization and the text clearly shows a foundation/company/government agency giving money TO that source organization, classify as "{RELATIONSHIP_FUNDER}".
+- If the direction of funding is unclear, classify as "{RELATIONSHIP_UNCLEAR}".
+- Always fill IRS/Form Context. If not IRS-related, use "{IRS_CONTEXT_NONE}".
+
+Detected source context before AI review:
+- IRS/Form context label: {irs_context['label']}
+- Suggested default relationship if unclear: {irs_context['default_relationship']}
+- Warning: {irs_context.get('warning', '')}
+
+Use confidence:
+High = clearly a donor/funder/sponsor/supporter/contributor name or clearly a grantee/recipient in an IRS grants-paid context.
+Medium = likely but context is not perfect.
+Low = uncertain but possibly relevant.
 
 Source organization:
 {source_org}
@@ -778,7 +935,7 @@ Source text:
             input=[
                 {
                     "role": "system",
-                    "content": "You extract clean nonprofit donor/funder data into strict structured JSON. You prioritize precision and avoid staff/media/program/recognition false positives."
+                    "content": "You extract clean nonprofit donor/funder and IRS/Form 990 relationship data into strict structured JSON. You prioritize precision and avoid staff/media/program/recognition false positives."
                 },
                 {
                     "role": "user",
@@ -801,10 +958,18 @@ Source text:
             if not name:
                 continue
 
+            relationship = normalize_relationship(
+                donor.get("relationship_to_source", ""),
+                fallback=irs_context.get("default_relationship", RELATIONSHIP_FUNDER)
+            )
+            irs_form_context = str(donor.get("irs_form_context", "")).strip() or irs_context.get("label", IRS_CONTEXT_NONE)
+
             all_rows.append({
                 "Source Organization": source_org or "Unknown organization",
                 "Donor/Funder Name": name,
                 "Donor Type": donor.get("donor_type", "Unknown"),
+                "Relationship to Source": relationship,
+                "IRS/Form Context": irs_form_context,
                 "Section": donor.get("section", "AI-extracted donor/funder names"),
                 "Year": donor.get("year", "Unknown"),
                 "Confidence": donor.get("confidence", "Medium"),
@@ -842,11 +1007,14 @@ Look for:
 - contributor pages
 - annual reports
 - impact reports
-- PDFs
+- donor impact PDFs
+- gratitude reports
+- IRS/Form 990 sources when useful for funder research
 - pages with donor tiers, corporate partners, foundations, agency donors, or individual donors
 
 Return direct URLs where possible.
 Prefer pages that are likely to contain actual donor/funder names, not broad homepage pages, generic recognition pages, program pages, press/media pages, or staff/advisory pages.
+If recommending IRS/Form 990 sources, note that the source may require grantee/funder relationship review.
 """
 
     response = client.responses.create(
@@ -901,43 +1069,43 @@ Prefer pages that are likely to contain actual donor/funder names, not broad hom
 source_org = st.text_input("Source organization name", placeholder="Example: The Climate Center")
 
 input_mode = st.radio(
-    "Choose input method",
+    "What source do you want to start with?",
     [
-        "Automatically find donor/funder page from homepage",
-        "Paste exact webpage or PDF URL",
-        "Upload PDF report"
+        "Find pages from an organization homepage",
+        "Use an exact webpage or PDF URL",
+        "Upload a PDF report"
     ],
-    help="Most users should start with the homepage option. Use the direct URL option only when you already know the exact donor page or PDF."
+    help="Most users should start with the homepage option. Use the direct URL option only when you already know the exact donor page, annual report, Form 990 source, or PDF."
 )
 
 homepage_url = ""
 url = ""
 uploaded_file = None
 
-if input_mode == "Automatically find donor/funder page from homepage":
+if input_mode == "Find pages from an organization homepage":
     homepage_url = st.text_input(
         "Organization homepage URL",
         placeholder="Example: https://theclimatecenter.org"
     )
     st.markdown(
-        '<div class="small-muted">Recommended workflow: enter the organization name and homepage first. The app will then look for likely donor, funder, sponsor, supporter, annual report, or PDF pages.</div>',
+        '<div class="small-muted">Best starting point: paste the organization’s main website. The app will look for likely donor, funder, sponsor, supporter, annual report, PDF, and IRS/Form 990 sources.</div>',
         unsafe_allow_html=True
     )
 
-elif input_mode == "Paste exact webpage or PDF URL":
+elif input_mode == "Use an exact webpage or PDF URL":
     url = st.text_input(
         "Exact webpage or PDF URL",
-        placeholder="Paste a direct donor page, supporter page, annual report page, or PDF link here"
+        placeholder="Paste a direct donor page, supporter page, annual report page, Form 990 source, or PDF link here"
     )
     st.markdown(
-        '<div class="small-muted">Use this when you already have the exact source page or PDF you want the app to read.</div>',
+        '<div class="small-muted">Use this when you already have the exact source page, IRS/Form 990 page, or PDF you want the app to read.</div>',
         unsafe_allow_html=True
     )
 
-elif input_mode == "Upload PDF report":
+elif input_mode == "Upload a PDF report":
     uploaded_file = st.file_uploader("Upload a PDF report", type=["pdf"])
     st.markdown(
-        '<div class="small-muted">Use this for annual reports, impact reports, or donor PDFs saved on your computer.</div>',
+        '<div class="small-muted">Use this for annual reports, impact reports, donor PDFs, IRS/Form 990 PDFs, or saved reports on your computer.</div>',
         unsafe_allow_html=True
     )
 
@@ -951,8 +1119,8 @@ if api_ready:
             <span class="ai-ready-badge">● AI is ready</span>
             <div class="card-title">Smart extraction is turned on automatically</div>
             <div class="card-copy">
-                The app will use AI first to find likely donor/funder pages and clean results from messy webpages or PDFs.
-                If AI is unavailable for a source, the app will quietly fall back to standard extraction so the workflow does not break.
+                The app will use AI first to find likely donor/funder pages and clean results from messy webpages, PDFs, and IRS/Form 990 sources.
+                If AI is unavailable for a source, the app will quietly fall back to standard extraction only when the page looks donor-related.
             </div>
         </div>
         """,
@@ -965,8 +1133,8 @@ else:
             <span class="ai-off-badge">● AI not connected in this version</span>
             <div class="card-title">Standard extraction is available as a backup</div>
             <div class="card-copy">
-                This version does not currently see an OpenAI API key. The app will still try standard extraction.
-                AI discovery and extraction will turn on once OPENAI_API_KEY is added in Streamlit Secrets or local secrets.
+                This version does not currently see an OpenAI API key. The app will still try conservative standard extraction.
+                AI discovery, IRS/Form 990 relationship review, and extraction will turn on once OPENAI_API_KEY is added in Streamlit Secrets or local secrets.
             </div>
         </div>
         """,
@@ -979,8 +1147,8 @@ with st.expander("Smart AI options", expanded=False):
         <div class="info-card">
             <div class="card-title">What does AI do here?</div>
             <div class="card-copy">
-                AI helps the app understand messy donor pages, sponsor lists, annual reports, and PDFs more intelligently than basic keyword rules.
-                It can help find better source pages and return cleaner donor/funder names with confidence notes.
+                AI helps the app understand messy donor pages, sponsor lists, annual reports, PDFs, and IRS/Form 990 sources more intelligently than basic keyword rules.
+                It can help find better source pages and return cleaner donor/funder names with confidence and relationship notes.
             </div>
         </div>
         """,
@@ -1071,7 +1239,7 @@ with st.expander("Smart AI options", expanded=False):
     with st.expander("What does “reading depth” mean?", expanded=False):
         st.write(
             "Reading depth controls how much of a long webpage or PDF the AI is allowed to read. "
-            "A short donor page usually only needs Standard scan. A long annual report may need Deep scan because the donor list could be buried far into the document. "
+            "A short donor page usually only needs Standard scan. A long annual report or IRS filing may need Deep scan because relevant names could be buried far into the document. "
             "Deeper reading can improve results, but it may take longer and use more OpenAI credits."
         )
 
@@ -1089,7 +1257,7 @@ def extract_text_from_webpage(url):
     response = requests.get(
         url,
         timeout=25,
-        headers={"User-Agent": "Mozilla/5.0 donor-funder-extraction-tool/2.2"}
+        headers={"User-Agent": "Mozilla/5.0 donor-funder-extraction-tool/2.3"}
     )
     response.raise_for_status()
 
@@ -1114,7 +1282,7 @@ def extract_text_from_pdf_url(url):
     response = requests.get(
         url,
         timeout=35,
-        headers={"User-Agent": "Mozilla/5.0 donor-funder-extraction-tool/2.2"}
+        headers={"User-Agent": "Mozilla/5.0 donor-funder-extraction-tool/2.3"}
     )
     response.raise_for_status()
 
@@ -1426,6 +1594,9 @@ def source_is_broad_report_page(source_url):
 
 def extract_possible_donors_rule_based(text, source_org, source_url):
     lines = clean_lines(text)
+    irs_context = detect_irs_form_context(source_url, text)
+    relationship = normalize_relationship(irs_context.get("default_relationship"), fallback=RELATIONSHIP_FUNDER)
+    irs_label = irs_context.get("label", IRS_CONTEXT_NONE)
 
     rows = []
     collecting = False
@@ -1446,6 +1617,8 @@ def extract_possible_donors_rule_based(text, source_org, source_url):
                 "Source Organization": source_org or "Unknown organization",
                 "Donor/Funder Name": line,
                 "Donor Type": "Unknown",
+                "Relationship to Source": relationship,
+                "IRS/Form Context": irs_label,
                 "Section": current_section,
                 "Year": str(extract_year_from_url(source_url) or "Unknown"),
                 "Confidence": "Medium",
@@ -1465,6 +1638,8 @@ def extract_possible_donors_rule_based(text, source_org, source_url):
                     "Source Organization": source_org or "Unknown organization",
                     "Donor/Funder Name": line,
                     "Donor Type": "Unknown",
+                    "Relationship to Source": relationship,
+                    "IRS/Form Context": irs_label,
                     "Section": "Possible donor/funder names - fallback scan",
                     "Year": str(extract_year_from_url(source_url) or "Unknown"),
                     "Confidence": "Low",
@@ -1485,16 +1660,23 @@ def extract_possible_donors_rule_based(text, source_org, source_url):
 
 def clean_extracted_results(df, source_url=""):
     if df is None or df.empty:
-        return pd.DataFrame(columns=[
-            "Source Organization", "Donor/Funder Name", "Donor Type", "Section",
-            "Year", "Confidence", "Notes", "Source URL", "Extraction Method"
-        ])
+        return pd.DataFrame(columns=RESULT_COLUMNS)
 
     df = df.copy()
 
-    for col in ["Donor/Funder Name", "Donor Type", "Section", "Notes", "Source URL"]:
+    for col in RESULT_COLUMNS:
         if col not in df.columns:
-            df[col] = ""
+            if col == "Relationship to Source":
+                df[col] = RELATIONSHIP_FUNDER
+            elif col == "IRS/Form Context":
+                df[col] = IRS_CONTEXT_NONE
+            else:
+                df[col] = ""
+
+    for col in [
+        "Donor/Funder Name", "Donor Type", "Relationship to Source", "IRS/Form Context",
+        "Section", "Notes", "Source URL", "Extraction Method"
+    ]:
         df[col] = df[col].astype(str)
 
     source_lower = str(source_url or "").lower()
@@ -1517,7 +1699,7 @@ def clean_extracted_results(df, source_url=""):
         "donor", "donors", "funder", "funders", "sponsor", "sponsors",
         "supporter", "supporters", "contributor", "contributors", "grant",
         "grants", "funding", "donation", "donating", "donated", "sponsored",
-        "sponsoring", "underwrite", "underwriting", "annual fund"
+        "sponsoring", "underwrite", "underwriting", "annual fund", "grantee", "recipient"
     ]
 
     def keep_row(row):
@@ -1525,8 +1707,10 @@ def clean_extracted_results(df, source_url=""):
         section = str(row.get("Section", "")).lower()
         notes = str(row.get("Notes", "")).lower()
         donor_type = str(row.get("Donor Type", "")).lower()
+        relationship = str(row.get("Relationship to Source", "")).lower()
+        irs_context = str(row.get("IRS/Form Context", "")).lower()
         method = str(row.get("Extraction Method", "")).lower()
-        combined = " ".join([name, section, notes, donor_type, source_lower])
+        combined = " ".join([name, section, notes, donor_type, relationship, irs_context, source_lower])
 
         if not name or len(name) < 2:
             return False
@@ -1534,7 +1718,7 @@ def clean_extracted_results(df, source_url=""):
         if name in false_positive_names:
             return False
 
-        # If the row comes from a known non-donor context, keep it only when the note/type explicitly says donation/funding/sponsorship.
+        # If the row comes from a known non-donor context, keep it only when the note/type/relationship explicitly says donation/funding/sponsorship/grantee context.
         if any(bad in combined for bad in false_positive_contexts):
             if not any(good in combined for good in donor_context_words):
                 return False
@@ -1554,10 +1738,18 @@ def clean_extracted_results(df, source_url=""):
     df = df[df.apply(keep_row, axis=1)]
 
     if not df.empty:
+        df["Relationship to Source"] = df["Relationship to Source"].apply(lambda value: normalize_relationship(value, fallback=RELATIONSHIP_FUNDER))
+        df.loc[df["IRS/Form Context"].str.strip().eq(""), "IRS/Form Context"] = IRS_CONTEXT_NONE
         df["Dedupe Key"] = df["Donor/Funder Name"].apply(normalize_name_for_dedupe)
         df = df.drop_duplicates(subset=["Dedupe Key", "Source URL"])
         df = df.drop(columns=["Dedupe Key"])
         df = df.reset_index(drop=True)
+
+    # Keep column order stable for review and CSV export.
+    for col in RESULT_COLUMNS:
+        if col not in df.columns:
+            df[col] = ""
+    df = df[RESULT_COLUMNS]
 
     return df
 
@@ -1613,7 +1805,7 @@ def extract_from_source(target_url, uploaded_file, source_org, use_ai_flag, mode
         rule_df = extract_possible_donors_rule_based(text, source_org, source)
         return rule_df, source, ai_note
 
-    return pd.DataFrame(), source, ai_note
+    return pd.DataFrame(columns=RESULT_COLUMNS), source, ai_note
 
 
 @st.cache_data(show_spinner=False)
@@ -1667,6 +1859,16 @@ def friendly_page_type(candidate):
     text = candidate_text_blob(candidate)
     path = url_path_lower(candidate.get("url", ""))
 
+    if any(signal in text or signal in path for signal in [
+        "form 990", "form-990", "form990", "990-pf", "990pf",
+        "irs", "schedule i", "nonprofit explorer", "propublica", "grants paid"
+    ]):
+        if "990-pf" in text or "990pf" in text or "990-pf" in path or "990pf" in path:
+            return "IRS/Form 990-PF source"
+        if "grants paid" in text or "schedule i" in text:
+            return "IRS/Form 990 grants-paid source"
+        return "IRS/Form 990 source"
+
     direct_partner_list_phrases = [
         "visionary partners", "mission partners", "leadership partners",
         "corporate partners", "foundation partners", "our partners",
@@ -1711,6 +1913,10 @@ def is_low_quality_discovery_page(candidate):
     path = url_path_lower(candidate.get("url", ""))
     title = str(candidate.get("title", "")).lower()
 
+    # IRS/Form 990 sources are not automatically low-quality, but they must be reviewed for funder vs grantee direction.
+    if is_irs_candidate_source(candidate):
+        return False
+
     hard_bad_path_bits = [
         "/node/", "/en-espanol/", "/espanol", "/es/", "/fr/", "/de/",
         "/blog", "/blogs", "/news", "/newsroom", "/press", "/media",
@@ -1738,7 +1944,7 @@ def is_low_quality_discovery_page(candidate):
         good in text for good in [
             "annual report", "donor", "donors", "partner", "partners",
             "foundation", "foundations", "supporter", "supporters",
-            "sponsor", "sponsors", "funder", "funders"
+            "sponsor", "sponsors", "funder", "funders", "form 990", "990-pf"
         ]
     ):
         return True
@@ -1758,6 +1964,11 @@ def page_specificity_score(candidate):
 
     if "/node/" in path or "/en-espanol/" in path or "/espanol" in path:
         score -= 300
+
+    if is_irs_candidate_source(candidate):
+        score += 35
+        if "grants paid" in text or "schedule i" in text or "990-pf" in text or "990pf" in text:
+            score += 20
 
     best_path_bits = [
         "/partners", "/about/partners", "/corporate-and-foundation",
@@ -1782,7 +1993,8 @@ def page_specificity_score(candidate):
         "partner list", "donor list", "supporter list", "sponsor list",
         "donors", "our donors", "supporters", "our supporters",
         "partners", "foundations", "corporate and foundation", "sponsors",
-        "funders", "donor impact", "gratitude report", "annual report"
+        "funders", "donor impact", "gratitude report", "annual report",
+        "form 990", "990-pf", "schedule i", "grants paid"
     ]
     for phrase in strong_title_phrases:
         if phrase in title or phrase in text:
@@ -1798,6 +2010,8 @@ def page_specificity_score(candidate):
         score += 165
     elif page_type in ["annual report page", "donor impact pdf", "donor gratitude pdf"]:
         score += 55
+    elif page_type in ["irs/form 990 source", "irs/form 990-pf source", "irs/form 990 grants-paid source"]:
+        score += 30
     elif page_type == "pdf report":
         score += 25
     elif page_type == "possible donor-related page":
@@ -1894,7 +2108,7 @@ def check_url_status(url):
         }
 
     headers = {
-        "User-Agent": "Mozilla/5.0 donor-funder-extraction-tool/2.2",
+        "User-Agent": "Mozilla/5.0 donor-funder-extraction-tool/2.3",
         "Accept": "text/html,application/pdf,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
 
@@ -2080,11 +2294,14 @@ def is_actual_list_source(candidate):
 def is_report_or_pdf_source(candidate):
     page_type = friendly_page_type(candidate).lower()
     text = candidate_text_blob(candidate)
-    return page_type in ["annual report page", "donor impact pdf", "donor gratitude pdf", "pdf report", "financials/report page"] or "pdf" in text
+    return page_type in [
+        "annual report page", "donor impact pdf", "donor gratitude pdf", "pdf report",
+        "financials/report page", "irs/form 990 source", "irs/form 990-pf source", "irs/form 990 grants-paid source"
+    ] or "pdf" in text
 
 
 def is_useful_extraction_candidate(candidate):
-    return is_actual_list_source(candidate) or is_report_or_pdf_source(candidate) or is_exact_donor_result_page(candidate.get("url", ""))
+    return is_actual_list_source(candidate) or is_report_or_pdf_source(candidate) or is_exact_donor_result_page(candidate.get("url", "")) or is_irs_candidate_source(candidate)
 
 
 def get_current_latest_candidate_urls(manual_url=""):
@@ -2157,6 +2374,11 @@ def combine_and_clean_results(all_results, dedupe_across_pages=False):
     combined_df = combined_df.drop(columns=["Dedupe Key"])
     combined_df = combined_df.reset_index(drop=True)
 
+    for col in RESULT_COLUMNS:
+        if col not in combined_df.columns:
+            combined_df[col] = ""
+    combined_df = combined_df[RESULT_COLUMNS]
+
     return combined_df
 
 
@@ -2169,11 +2391,15 @@ def show_extraction_summary(result_df, years_display_override=None):
     if "Year" not in temp_df.columns:
         temp_df["Year"] = temp_df["Source URL"].apply(extract_year_from_url)
 
+    if "Relationship to Source" not in temp_df.columns:
+        temp_df["Relationship to Source"] = RELATIONSHIP_FUNDER
+
     temp_df["Dedupe Key"] = temp_df["Donor/Funder Name"].apply(normalize_name_for_dedupe)
 
     total_rows = len(temp_df)
     unique_names = temp_df["Dedupe Key"].nunique()
     pages_used = temp_df["Source URL"].nunique()
+    grantee_review_count = int(temp_df["Relationship to Source"].eq(RELATIONSHIP_GRANTEE).sum())
     raw_years = [
         str(year).strip() for year in temp_df["Year"].dropna().unique()
         if str(year).strip().lower() not in ["", "unknown", "none", "nan"]
@@ -2197,17 +2423,23 @@ def show_extraction_summary(result_df, years_display_override=None):
 
     st.subheader("Extraction summary")
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
 
     col1.metric("Total rows", total_rows)
     col2.metric("Unique names", unique_names)
     col3.metric("Pages used", pages_used)
     col4.metric("Years included", years_display)
+    col5.metric("Grantee/recipient review", grantee_review_count)
 
     if total_rows != unique_names:
         st.info(
             "Some names may appear on multiple pages or across multiple years. "
             "The CSV keeps Source URL and Section so those appearances can be reviewed."
+        )
+
+    if grantee_review_count:
+        st.warning(
+            "Some rows are labeled as likely grantees/recipients. These are probably organizations receiving money from a filing organization, not donors to the source organization. Review before using them as funders."
         )
 
 
@@ -2219,7 +2451,7 @@ def show_results(result_df, source_org, ai_note="", years_display_override=None)
     if result_df.empty:
         st.warning(
             "No clear donor/funder names were extracted from this source. "
-            "Try a more specific donor, supporter, sponsor, funder, contributor, annual report, or donor PDF page."
+            "Try a more specific donor, supporter, sponsor, funder, contributor, annual report, IRS/Form 990, or donor PDF page."
         )
         return
 
@@ -2229,8 +2461,8 @@ def show_results(result_df, source_org, ai_note="", years_display_override=None)
 
     show_extraction_summary(result_df, years_display_override=years_display_override)
 
-    st.success(f"Extracted {len(result_df)} possible donor/funder names.")
-    st.info("Please review results before using them. AI and standard extraction can still miss names or include uncertain entries.")
+    st.success(f"Extracted {len(result_df)} possible donor/funder or IRS/Form 990 relationship rows.")
+    st.info("Please review results before using them. Pay special attention to Relationship to Source, IRS/Form Context, confidence, and notes.")
     st.dataframe(result_df, use_container_width=True)
 
     csv = result_df.to_csv(index=False).encode("utf-8")
@@ -2250,7 +2482,7 @@ def run_multi_page_extraction(mode="all", manual_url=""):
     if not urls_to_extract:
         st.warning(
             "No usable donor/funder source pages were found for this extraction mode. "
-            "Try pasting a specific donor, supporter, partner, annual report, or PDF URL into the override box."
+            "Try pasting a specific donor, supporter, partner, annual report, IRS/Form 990, or PDF URL into the override box."
         )
         return
 
@@ -2294,7 +2526,7 @@ def run_multi_page_extraction(mode="all", manual_url=""):
 # Main app actions
 # ============================================================
 
-if input_mode == "Automatically find donor/funder page from homepage":
+if input_mode == "Find pages from an organization homepage":
     st.divider()
 
     col1, col2 = st.columns([1, 1])
@@ -2324,7 +2556,7 @@ if input_mode == "Automatically find donor/funder page from homepage":
                 ai_summary = ""
 
                 with st.status("Finding usable donor/funder pages...", expanded=True) as status:
-                    st.write("Scanning the organization website for donor, sponsor, supporter, annual report, and PDF links...")
+                    st.write("Scanning the organization website for donor, sponsor, supporter, annual report, IRS/Form 990, and PDF links...")
                     rule_candidates = cached_find_pages(homepage_url, top_n=10)
 
                     if use_ai and has_openai_key():
@@ -2352,7 +2584,7 @@ if input_mode == "Automatically find donor/funder page from homepage":
                 if not usable_candidates:
                     st.warning(
                         "No usable donor/funder pages were found. The app may have found broken, blocked, or low-quality links only. "
-                        "Try using the manual URL option with a direct donor, funder, annual report, or PDF link."
+                        "Try using the manual URL option with a direct donor, funder, annual report, IRS/Form 990, or PDF link."
                     )
                     st.session_state.candidate_pages = []
                 else:
@@ -2400,10 +2632,10 @@ if input_mode == "Automatically find donor/funder page from homepage":
             candidate_options.append(label)
 
         selected_option = st.selectbox(
-            "Choose a source page to extract from",
+            "Review a suggested source page",
             candidate_options,
             key="candidate_page_selectbox",
-            help="Best match means the app thinks this page is highly likely to contain donor/funder information. Good match and possible match may still be useful, but should be reviewed more carefully."
+            help="Best match means the app thinks this page is highly likely to contain donor/funder information. IRS/Form 990 sources should be reviewed carefully for funder vs grantee direction."
         )
 
         selected_index = candidate_options.index(selected_option)
@@ -2416,18 +2648,20 @@ if input_mode == "Automatically find donor/funder page from homepage":
             st.write(f"Page status: {selected_candidate.get('page_status', 'Available')}")
             st.write(f"Year: {selected_candidate.get('year', 'Unknown')}")
             st.write(f"Source method: {selected_candidate.get('method', 'Website scan')}")
-            st.caption("The app ranks cleaner donor, partner, supporter, annual report, and PDF pages higher than generic, translated, program, recognition, newsroom, or broken pages.")
+            if is_irs_candidate_source(selected_candidate):
+                st.warning("This looks like an IRS/Form 990-related source. Review Relationship to Source and IRS/Form Context carefully after extraction.")
+            st.caption("The app ranks cleaner donor, partner, supporter, annual report, PDF, and IRS/Form 990 sources higher than generic, translated, program, recognition, newsroom, or broken pages.")
 
         manual_candidate_url = st.text_input(
             "Optional: paste a more specific page URL to extract from instead",
-            placeholder="Example: exact individual donors or business donors page"
+            placeholder="Example: exact individual donors, business donors, annual report, IRS/Form 990, or PDF page"
         )
 
         final_selected_url = manual_candidate_url.strip() if manual_candidate_url.strip() else selected_url
 
         st.caption("Recommended starting source")
         st.write(final_selected_url)
-        st.caption("Use the dropdown above to review the recommended source. The buttons below keep the workflow simple: current/latest donors or all years found.")
+        st.caption("Use the dropdown above to review suggested sources. The buttons below keep the workflow simple: current/latest donors or all years found.")
 
         col_b, col_c = st.columns([1, 1])
 
@@ -2441,7 +2675,7 @@ if input_mode == "Automatically find donor/funder page from homepage":
         with col_c:
             extract_all = st.button(
                 "Extract all years found (slower)",
-                help="Scans current pages plus older annual reports, donor impact PDFs, and historical sources. This may take longer and use more API credits."
+                help="Scans current pages plus older annual reports, donor impact PDFs, IRS/Form 990 sources, and historical sources. This may take longer and use more API credits."
             )
 
         if extract_newest:
@@ -2466,7 +2700,7 @@ if input_mode == "Automatically find donor/funder page from homepage":
                 st.error(f"Something went wrong during all-years extraction: {e}")
 
 
-elif input_mode == "Paste exact webpage or PDF URL":
+elif input_mode == "Use an exact webpage or PDF URL":
     st.divider()
 
     if st.button("Extract names", type="primary"):
@@ -2509,7 +2743,7 @@ elif input_mode == "Paste exact webpage or PDF URL":
                 st.error(f"Something went wrong: {e}")
 
 
-elif input_mode == "Upload PDF report":
+elif input_mode == "Upload a PDF report":
     st.divider()
 
     if st.button("Extract names", type="primary"):
@@ -2539,5 +2773,6 @@ st.divider()
 
 st.caption(
     "Note: AI improves discovery and extraction, but some websites may block automated access. "
-    "For blocked websites, upload a PDF report or use manual review. Always review results before using them."
+    "For blocked websites, upload a PDF report or use manual review. Always review results before using them. "
+    "For IRS/Form 990 sources, review Relationship to Source carefully because grant tables may list grantees/recipients rather than donors."
 )

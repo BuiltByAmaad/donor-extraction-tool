@@ -2093,7 +2093,7 @@ def combine_and_clean_results(all_results, dedupe_across_pages=False):
     return combined_df
 
 
-def show_extraction_summary(result_df):
+def show_extraction_summary(result_df, years_display_override=None):
     if result_df is None or result_df.empty:
         return
 
@@ -2117,7 +2117,9 @@ def show_extraction_summary(result_df):
         if re.fullmatch(r"20\d{2}", year)
     })
 
-    if not numeric_years:
+    if years_display_override:
+        years_display = years_display_override
+    elif not numeric_years:
         years_display = "Unknown"
     elif len(numeric_years) == 1:
         years_display = str(numeric_years[0])
@@ -2142,7 +2144,7 @@ def show_extraction_summary(result_df):
         )
 
 
-def show_results(result_df, source_org, ai_note=""):
+def show_results(result_df, source_org, ai_note="", years_display_override=None):
     if result_df is None:
         st.warning("Please provide a valid source.")
         return
@@ -2158,7 +2160,7 @@ def show_results(result_df, source_org, ai_note=""):
         with st.expander("AI source assessment", expanded=False):
             st.write(ai_note)
 
-    show_extraction_summary(result_df)
+    show_extraction_summary(result_df, years_display_override=years_display_override)
 
     st.success(f"Extracted {len(result_df)} possible donor/funder names.")
     st.info("Please review results before using them. AI and standard extraction can still miss names or include uncertain entries.")
@@ -2185,7 +2187,9 @@ def run_multi_page_extraction(mode="all", manual_url=""):
         return
 
     all_results = []
-    label = "current-year donors" if mode in ["current", "newest"] else "all years found"
+    is_current_mode = mode in ["current", "newest"]
+    label = "current/latest donors" if is_current_mode else "all years found"
+    years_display_override = "Current / latest available" if is_current_mode else None
 
     st.caption(f"Reading {len(urls_to_extract)} source page(s).")
 
@@ -2215,7 +2219,7 @@ def run_multi_page_extraction(mode="all", manual_url=""):
         dedupe_across_pages=False
     )
 
-    show_results(combined_df, source_org)
+    show_results(combined_df, source_org, years_display_override=years_display_override)
 
 
 # ============================================================
@@ -2355,13 +2359,13 @@ if input_mode == "Automatically find donor/funder page from homepage":
 
         st.caption("Recommended starting source")
         st.write(final_selected_url)
-        st.caption("Use the dropdown above to review the recommended source. The buttons below keep the workflow simple: current donors or all years found.")
+        st.caption("Use the dropdown above to review the recommended source. The buttons below keep the workflow simple: current/latest donors or all years found.")
 
         col_b, col_c = st.columns([1, 1])
 
         with col_b:
             extract_newest = st.button(
-                "Extract current-year donors",
+                "Extract current/latest donors",
                 type="primary",
                 help="Recommended. Uses the best current direct donor/partner pages and the newest dated sources found."
             )

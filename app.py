@@ -1572,6 +1572,49 @@ def url_path_lower(url):
         return str(url or "").lower()
 
 
+def is_low_quality_discovery_page(candidate):
+    """Pages that often open successfully but are poor choices for extraction.
+    We skip these when showing source-page options so users do not accidentally
+    extract from translated CMS nodes, news/blog pages, recipes, events, etc.
+    """
+    text = candidate_text_blob(candidate)
+    path = url_path_lower(candidate.get("url", ""))
+    title = str(candidate.get("title", "")).lower()
+
+    # Generic CMS/translated paths are almost never the best extraction source,
+    # even when AI says they are possibly donor-related.
+    hard_bad_path_bits = [
+        "/node/", "/en-espanol/", "/espanol", "/es/", "/fr/", "/de/",
+        "/blog", "/blogs", "/news", "/newsroom", "/press", "/media",
+        "/article", "/articles", "/story", "/stories", "/events", "/event",
+        "/careers", "/jobs", "/volunteer", "/recipes", "/recipe"
+    ]
+
+    if any(bit in path for bit in hard_bad_path_bits):
+        return True
+
+    weak_title_bits = [
+        "en español", "español", "blog", "news", "press", "recipe",
+        "volunteer", "careers", "event", "homepage"
+    ]
+
+    if any(bit in title for bit in weak_title_bits):
+        return True
+
+    # Vague AI-found pages should not beat explicit partner/donor/report pages.
+    page_type = friendly_page_type(candidate).lower()
+    if page_type == "possible donor-related page" and not any(
+        good in text for good in [
+            "annual report", "donor", "donors", "partner", "partners",
+            "foundation", "foundations", "supporter", "supporters",
+            "sponsor", "sponsors", "funder", "funders"
+        ]
+    ):
+        return True
+
+    return False
+
+
 def friendly_page_type(candidate):
     text = candidate_text_blob(candidate)
     path = url_path_lower(candidate.get("url", ""))
@@ -1619,73 +1662,77 @@ def page_specificity_score(candidate):
     except Exception:
         score = 60
 
-    # Strong positive signals: direct donor/funder/partner/supporter pages.
-    strong_phrases = [
-        "donor", "donors", "funder", "funders", "supporter", "supporters",
-        "sponsor", "sponsors", "contributor", "contributors", "annual fund",
-        "corporate partner", "corporate partners", "foundation partner", "foundation partners",
-        "our partners", "our donors", "our supporters", "giving tier", "donor list",
-        "donor impact", "gratitude report"
-    ]
-    for phrase in strong_phrases:
-        if phrase in text:
-            score += 24
+    # Hard demotion: these pages can open, but are usually bad extraction choices.
+    # Example: Feeding America /en-espanol/node/2099 opened, but only produced one weak result.
+    if "/node/" in path or "/en-espanol/" in path or "/espanol" in path:
+        score -= 300
 
-    # URL path matters a lot because users click from the dropdown.
-    exact_good_path_bits = [
-        "/partners", "/donors", "/supporters", "/sponsors", "/funders",
-        "/foundations", "/corporate", "/annual-report", "/annual-reports",
-        "/financials", "/impact-report", "/impact-reports"
+    # Best direct source pages: these should beat vague pages and most PDFs.
+    best_path_bits = [
+        "/partners", "/about/partners", "/corporate-and-foundation",
+        "/foundations", "/foundation", "/donors", "/supporters",
+        "/sponsors", "/funders", "/contributors"
     ]
-    for bit in exact_good_path_bits:
+    for bit in best_path_bits:
         if bit in path:
-            score += 30
+            score += 160
 
-    # Annual reports/PDFs are useful, but usually should not outrank a clean partner/donor page.
-    if ".pdf" in path or "pdf" in text:
-        score += 8
-    if "annual report" in text:
-        score += 12
-
-    # Penalize vague pages that AI/website scanners often overrate.
-    vague_signals = [
-        "possible donor-related page", "found page", "unknown", "node", "generic", "homepage"
+    # Useful report/archive pages, but usually below clean donor/partner pages.
+    report_path_bits = [
+        "/annual-report", "/annual-reports", "/financials",
+        "/impact-report", "/impact-reports"
     ]
-    for signal in vague_signals:
-        if signal in text:
-            score -= 45
+    for bit in report_path_bits:
+        if bit in path:
+            score += 55
 
-    # Penalize translated, generic CMS, newsroom, blog, and article pages unless they have strong donor terms.
+    # Strong title/page-type words.
+    strong_title_phrases = [
+        "donors", "our donors", "supporters", "our supporters",
+        "partners", "our partners", "foundations", "foundation partners",
+        "corporate partners", "corporate and foundation", "sponsors",
+        "funders", "donor impact", "annual report"
+    ]
+    for phrase in strong_title_phrases:
+        if phrase in title or phrase in text:
+            score += 42
+
+    page_type = friendly_page_type(candidate).lower()
+    if page_type in [
+        "corporate/foundation partners page", "corporate partners page",
+        "foundation/funder page", "partner page", "donor page",
+        "supporter page", "sponsor page", "funder page", "contributor page"
+    ]:
+        score += 120
+    elif page_type in ["annual report page", "donor impact pdf", "donor gratitude pdf"]:
+        score += 50
+    elif page_type == "pdf report":
+        score += 25
+    elif page_type == "possible donor-related page":
+        score -= 110
+
+    # Generic pages should lose heavily.
     weak_path_bits = [
-        "/node/", "/en-espanol/", "/es/", "/espanol", "/fr/", "/de/",
         "/blog", "/blogs", "/news", "/newsroom", "/press", "/media",
         "/article", "/articles", "/story", "/stories", "/events", "/event",
-        "/careers", "/jobs", "/volunteer", "/recipes", "/recipe", "/about-us/our-work"
+        "/careers", "/jobs", "/volunteer", "/recipes", "/recipe",
+        "/about-us/our-work"
     ]
     for bit in weak_path_bits:
         if bit in path:
-            score -= 70
+            score -= 160
 
-    # Penalize titles that sound like general content, not a donor source.
     weak_title_bits = [
-        "blog", "news", "press", "recipe", "volunteer", "careers", "event",
-        "en español", "español", "homepage", "about us", "our work"
+        "blog", "news", "press", "recipe", "volunteer", "careers",
+        "event", "en español", "español", "homepage", "about us", "our work"
     ]
     for bit in weak_title_bits:
         if bit in title:
-            score -= 40
+            score -= 80
 
-    # Strong page types should beat generic high-score pages.
-    page_type = friendly_page_type(candidate).lower()
-    if page_type in [
-        "corporate/foundation partners page", "corporate partners page", "foundation/funder page",
-        "partner page", "donor page", "supporter page", "sponsor page", "funder page"
-    ]:
-        score += 45
-    elif page_type in ["annual report page", "pdf report", "donor impact pdf", "donor gratitude pdf"]:
-        score += 18
-    elif page_type == "possible donor-related page":
-        score -= 45
+    # If a vague page has no clean URL slug, push it far down.
+    if page_type == "possible donor-related page" and not any(bit in path for bit in best_path_bits + report_path_bits):
+        score -= 140
 
     return score
 
@@ -1833,7 +1880,15 @@ def filter_usable_candidate_pages(candidates):
         if status["is_usable"]:
             if status.get("final_url") and status["final_url"] != candidate.get("url"):
                 candidate["url"] = status["final_url"]
-            usable.append(candidate)
+
+            # A page can be technically available but still be a poor extraction source.
+            # Keep it out of the main dropdown so users are guided to cleaner pages.
+            if is_low_quality_discovery_page(candidate):
+                candidate["page_status"] = "Skipped as low-quality match"
+                candidate["status_message"] = "This page opens, but looks like a translated, generic, news/blog, or CMS page rather than a clean donor/funder source."
+                skipped.append(candidate)
+            else:
+                usable.append(candidate)
         else:
             skipped.append(candidate)
 

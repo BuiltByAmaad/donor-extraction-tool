@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import re
@@ -33,16 +34,17 @@ st.set_page_config(
 # ============================================================
 
 APP_DIR = Path(__file__).parent if "__file__" in globals() else Path.cwd()
+ASSETS_DIR = APP_DIR / "assets"
 
 LOGO_PATHS = [
-    APP_DIR / "assets" / "climate-cardinals-logo.png",
-    APP_DIR / "assets" / "logo.png",
+    ASSETS_DIR / "climate-cardinals-logo.png",
+    ASSETS_DIR / "logo.png",
     APP_DIR / "climate-cardinals-logo.png",
 ]
 
 ICON_PATHS = [
-    APP_DIR / "assets" / "climate-cardinals-icon.png",
-    APP_DIR / "assets" / "icon.png",
+    ASSETS_DIR / "climate-cardinals-icon.png",
+    ASSETS_DIR / "icon.png",
     APP_DIR / "climate-cardinals-icon.png",
 ]
 
@@ -57,23 +59,33 @@ def first_existing_path(paths):
     return None
 
 
-def trim_logo_whitespace(image_path, padding=14):
+def trim_logo_whitespace(image_path, padding=14, white_threshold=245):
     """
     Crops extra transparent or white whitespace around the logo before displaying it.
-    This fixes logos that have a large empty box around the actual artwork.
+    Handles transparent PNGs and white-background PNGs.
+    Saves the cropped image to assets/_trimmed_climate_cardinals_logo.png.
+    Falls back to the original image if trimming fails.
     """
     try:
+        if image_path is None:
+            return None
+
+        image_path = Path(image_path)
         image = Image.open(image_path).convert("RGBA")
-
         alpha = image.getchannel("A")
-        alpha_bbox = alpha.getbbox()
+        alpha_min, alpha_max = alpha.getextrema()
 
-        if alpha_bbox:
-            bbox = alpha_bbox
+        bbox = None
+
+        if alpha_min < 255:
+            alpha_mask = alpha.point(lambda p: 255 if p > 0 else 0)
+            bbox = alpha_mask.getbbox()
         else:
-            background = Image.new("RGBA", image.size, (255, 255, 255, 255))
-            diff = ImageChops.difference(image, background)
-            bbox = diff.getbbox()
+            rgb_image = image.convert("RGB")
+            white_background = Image.new("RGB", rgb_image.size, (255, 255, 255))
+            diff = ImageChops.difference(rgb_image, white_background).convert("L")
+            non_white_mask = diff.point(lambda p: 255 if p > (255 - white_threshold) else 0)
+            bbox = non_white_mask.getbbox()
 
         if not bbox:
             return str(image_path)
@@ -85,9 +97,17 @@ def trim_logo_whitespace(image_path, padding=14):
         right = min(image.width, right + padding)
         bottom = min(image.height, bottom + padding)
 
+        if right <= left or bottom <= top:
+            return str(image_path)
+
         cropped = image.crop((left, top, right, bottom))
 
-        output_path = APP_DIR / "assets" / "_trimmed_climate_cardinals_logo.png"
+        try:
+            ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return str(image_path)
+
+        output_path = ASSETS_DIR / "_trimmed_climate_cardinals_logo.png"
         cropped.save(output_path)
 
         return str(output_path)
@@ -98,8 +118,8 @@ def trim_logo_whitespace(image_path, padding=14):
 
 BRAND_LOGO_PATH = first_existing_path(LOGO_PATHS)
 BRAND_ICON_PATH = first_existing_path(ICON_PATHS)
-
 TRIMMED_BRAND_LOGO_PATH = trim_logo_whitespace(BRAND_LOGO_PATH) if BRAND_LOGO_PATH else None
+
 
 # ============================================================
 # Plain-English AI options
@@ -250,6 +270,15 @@ st.markdown(
             background: linear-gradient(90deg, var(--cc-red), var(--cc-green), var(--cc-teal));
         }
 
+        .brand-topline {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1.25rem;
+            margin-bottom: 0.6rem;
+            padding-top: 0.15rem;
+        }
+
         .brand-eyebrow {
             display: inline-flex;
             align-items: center;
@@ -261,23 +290,47 @@ st.markdown(
             border: 1px solid #fecaca;
             font-weight: 800;
             font-size: 0.82rem;
-            margin-bottom: 0.65rem;
+            white-space: nowrap;
+        }
+
+        .brand-logo-inline {
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-end;
+            max-width: 250px;
+            min-width: 150px;
+            flex-shrink: 0;
+        }
+
+        .brand-logo-inline img {
+            max-height: 68px;
+            width: auto !important;
+            object-fit: contain;
+            display: block;
+        }
+
+        .brand-fallback {
+            font-size: 1.04rem;
+            font-weight: 900;
+            color: var(--cc-red-dark);
+            text-align: right;
+            line-height: 1.1;
         }
 
         .hero-title {
-            font-size: clamp(2rem, 3.2vw, 3.1rem);
+            font-size: clamp(1.85rem, 3vw, 2.85rem);
             font-weight: 900;
-            line-height: 1.04;
+            line-height: 1.05;
             letter-spacing: -0.055em;
-            margin: 0.1rem 0 0.7rem 0;
+            margin: 0.1rem 0 0.65rem 0;
             color: var(--cc-ink);
         }
 
         .hero-subtitle {
-            font-size: 1.05rem;
+            font-size: 1.02rem;
             color: var(--cc-muted);
             max-width: 980px;
-            line-height: 1.62;
+            line-height: 1.58;
             font-weight: 500;
         }
 
@@ -285,7 +338,7 @@ st.markdown(
             display: flex;
             gap: 0.55rem;
             flex-wrap: wrap;
-            margin-top: 1rem;
+            margin-top: 0.95rem;
         }
 
         .pill {
@@ -298,62 +351,27 @@ st.markdown(
             font-weight: 800;
         }
 
-       .brand-topline {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1.25rem;
-    margin-bottom: 0.75rem;
-}
+        @media (max-width: 900px) {
+            .brand-topline {
+                flex-direction: column-reverse;
+                align-items: flex-start;
+                gap: 0.8rem;
+            }
 
-.brand-logo-inline {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    max-width: 260px;
-    min-width: 180px;
-}
+            .brand-logo-inline {
+                justify-content: flex-start;
+                max-width: 220px;
+                min-width: 0;
+            }
 
-.brand-logo-inline img {
-    max-height: 76px;
-    width: auto !important;
-    object-fit: contain;
-    display: block;
-}
+            .brand-logo-inline img {
+                max-height: 58px;
+            }
 
-.brand-fallback {
-    font-size: 1.1rem;
-    font-weight: 900;
-    color: var(--cc-red-dark);
-    text-align: right;
-    line-height: 1.1;
-}
-
-.action-row {
-    margin-top: 0.65rem;
-    margin-bottom: 0.6rem;
-}
-
-.compact-divider {
-    margin-top: 1rem;
-    margin-bottom: 0.8rem;
-}
-
-@media (max-width: 900px) {
-    .brand-topline {
-        align-items: flex-start;
-        flex-direction: column;
-    }
-
-    .brand-logo-inline {
-        justify-content: flex-start;
-        max-width: 220px;
-    }
-
-    .brand-logo-inline img {
-        max-height: 62px;
-    }
-}
+            .brand-eyebrow {
+                white-space: normal;
+            }
+        }
 
         .step-card, .info-card, .ai-panel, .recommendation-card, .option-card, .review-note {
             background: var(--cc-card);
@@ -363,7 +381,9 @@ st.markdown(
             box-shadow: 0 10px 28px rgba(15, 32, 51, 0.06);
         }
 
-        .step-card { min-height: 122px; }
+        .step-card {
+            min-height: 122px;
+        }
 
         .step-number {
             display: inline-flex;
@@ -469,10 +489,15 @@ st.markdown(
         }
 
         div[data-baseweb="input"] {
-            border-radius: 14px;
+            border-radius: 14px !important;
             background: #ffffff !important;
             border: 1px solid #cbd5e1 !important;
             box-shadow: 0 3px 10px rgba(15, 32, 51, 0.04);
+        }
+
+        div[data-baseweb="input"] > div {
+            background: #ffffff !important;
+            border-radius: 14px !important;
         }
 
         div[data-baseweb="input"]:focus-within {
@@ -480,7 +505,24 @@ st.markdown(
             box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.13);
         }
 
-        input { color: var(--cc-ink) !important; font-weight: 600 !important; }
+        div[data-testid="stTextInput"] input {
+            background: #ffffff !important;
+            color: var(--cc-ink) !important;
+            caret-color: var(--cc-ink) !important;
+            font-weight: 600 !important;
+            border-radius: 14px !important;
+        }
+
+        div[data-testid="stTextInput"] input::placeholder {
+            color: #64748b !important;
+            opacity: 1 !important;
+            font-weight: 500 !important;
+        }
+
+        input {
+            color: var(--cc-ink) !important;
+            font-weight: 600 !important;
+        }
 
         div[data-baseweb="select"] > div {
             border-radius: 14px !important;
@@ -498,6 +540,7 @@ st.markdown(
             background: #ffffff;
             color: var(--cc-ink);
             box-shadow: 0 6px 16px rgba(15, 32, 51, 0.06);
+            white-space: nowrap;
         }
 
         .stButton > button:hover {
@@ -521,8 +564,15 @@ st.markdown(
             box-shadow: 0 8px 22px rgba(15, 32, 51, 0.06);
         }
 
-        div[data-testid="stMetricLabel"] { color: var(--cc-muted); font-weight: 800; }
-        div[data-testid="stMetricValue"] { color: var(--cc-ink); font-weight: 900; }
+        div[data-testid="stMetricLabel"] {
+            color: var(--cc-muted);
+            font-weight: 800;
+        }
+
+        div[data-testid="stMetricValue"] {
+            color: var(--cc-ink);
+            font-weight: 900;
+        }
 
         div[data-testid="stAlert"] {
             border-radius: 16px;
@@ -569,39 +619,34 @@ st.markdown(
 # Header
 # ============================================================
 
-logo_html = ""
-if TRIMMED_BRAND_LOGO_PATH:
-    import base64
+logo_html = """
+<div class="brand-logo-inline">
+    <div class="brand-fallback">Climate<br>Cardinals</div>
+</div>
+"""
 
+if TRIMMED_BRAND_LOGO_PATH:
     try:
         with open(TRIMMED_BRAND_LOGO_PATH, "rb") as image_file:
-            encoded_logo = base64.b64encode(image_file.read()).decode()
+            encoded_logo = base64.b64encode(image_file.read()).decode("utf-8")
 
         logo_html = f"""
-            <div class="brand-logo-inline">
-                <img src="data:image/png;base64,{encoded_logo}" alt="Climate Cardinals logo">
-            </div>
-        """
+<div class="brand-logo-inline">
+    <img src="data:image/png;base64,{encoded_logo}" alt="Climate Cardinals logo">
+</div>
+"""
     except Exception:
         logo_html = """
-            <div class="brand-logo-inline">
-                <div class="brand-fallback">Climate<br>Cardinals</div>
-            </div>
-        """
-else:
-    logo_html = """
-        <div class="brand-logo-inline">
-            <div class="brand-fallback">Climate<br>Cardinals</div>
-        </div>
-    """
+<div class="brand-logo-inline">
+    <div class="brand-fallback">Climate<br>Cardinals</div>
+</div>
+"""
 
 st.markdown(
     f"""
     <div class="brand-shell">
         <div class="brand-topline">
-            <div>
-                <div class="brand-eyebrow">Climate Cardinals research tool</div>
-            </div>
+            <div class="brand-eyebrow">Climate Cardinals research tool</div>
             {logo_html}
         </div>
 
@@ -672,6 +717,7 @@ with st.expander("How to use this tool", expanded=False):
             """,
             unsafe_allow_html=True
         )
+
 
 # ============================================================
 # Session state
@@ -1815,17 +1861,14 @@ def clean_extracted_results(df, source_url=""):
         if name in false_positive_names:
             return False
 
-        # If the row comes from a known non-donor context, keep it only when the note/type/relationship explicitly says donation/funding/sponsorship/grantee context.
         if any(bad in combined for bad in false_positive_contexts):
             if not any(good in combined for good in donor_context_words):
                 return False
 
-        # Program partner is often not a donor. Keep only with explicit donor/funder wording.
         if "program partner" in donor_type or "program partner" in combined:
             if not any(good in combined for good in donor_context_words):
                 return False
 
-        # Rule-based extraction is more fragile; require stronger context unless source itself is clearly donor-related.
         if "standard" in method:
             if any(bad in source_lower for bad in ["recognition", "recognitions", "/program", "/programs", "media", "press", "news"]):
                 return False
@@ -1842,10 +1885,10 @@ def clean_extracted_results(df, source_url=""):
         df = df.drop(columns=["Dedupe Key"])
         df = df.reset_index(drop=True)
 
-    # Keep column order stable for review and CSV export.
     for col in RESULT_COLUMNS:
         if col not in df.columns:
             df[col] = ""
+
     df = df[RESULT_COLUMNS]
 
     return df
@@ -1896,8 +1939,6 @@ def extract_from_source(target_url, uploaded_file, source_org, use_ai_flag, mode
                 f"AI extraction was unavailable for this source, so the app used standard extraction if this page looked donor-related. Details: {ai_error}"
             )
 
-    # Only use standard fallback on pages whose URL looks like a real donor/funder source.
-    # This avoids false positives from recognitions, program pages, media pages, and generic impact pages.
     if source and source_looks_like_strong_donor_page(source):
         rule_df = extract_possible_donors_rule_based(text, source_org, source)
         return rule_df, source, ai_note
@@ -2010,7 +2051,6 @@ def is_low_quality_discovery_page(candidate):
     path = url_path_lower(candidate.get("url", ""))
     title = str(candidate.get("title", "")).lower()
 
-    # IRS/Form 990 sources are not automatically low-quality, but they must be reviewed for funder vs grantee direction.
     if is_irs_candidate_source(candidate):
         return False
 
@@ -2398,7 +2438,12 @@ def is_report_or_pdf_source(candidate):
 
 
 def is_useful_extraction_candidate(candidate):
-    return is_actual_list_source(candidate) or is_report_or_pdf_source(candidate) or is_exact_donor_result_page(candidate.get("url", "")) or is_irs_candidate_source(candidate)
+    return (
+        is_actual_list_source(candidate)
+        or is_report_or_pdf_source(candidate)
+        or is_exact_donor_result_page(candidate.get("url", ""))
+        or is_irs_candidate_source(candidate)
+    )
 
 
 def get_current_latest_candidate_urls(manual_url=""):
@@ -2423,7 +2468,6 @@ def get_current_latest_candidate_urls(manual_url=""):
         newest_report_pages = sorted(newest_report_pages, key=lambda c: c.get("display_score", page_specificity_score(c)), reverse=True)
 
     selected = []
-    # Keep this focused; too many current pages can produce duplicates and slow runs.
     for c in direct_pages[:2] + newest_report_pages[:2]:
         url = c.get("url", "")
         if url and url not in selected:
@@ -2624,9 +2668,6 @@ def run_multi_page_extraction(mode="all", manual_url=""):
 # ============================================================
 
 if input_mode == "Find pages from an organization homepage":
-    st.markdown('<div class="compact-divider"></div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="action-row">', unsafe_allow_html=True)
     col1, col2, col3 = st.columns([0.18, 0.18, 0.64])
 
     with col1:
@@ -2634,8 +2675,6 @@ if input_mode == "Find pages from an organization homepage":
 
     with col2:
         clear_clicked = st.button("Clear found pages")
-
-    st.markdown('</div>', unsafe_allow_html=True)
 
     if clear_clicked:
         st.session_state.candidate_pages = []

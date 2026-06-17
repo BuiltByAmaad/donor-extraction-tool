@@ -3,4 +3,5 @@ requests
 beautifulsoup4
 pandas
 pypdf
+openai
 lxml

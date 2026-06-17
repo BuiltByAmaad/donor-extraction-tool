@@ -556,6 +556,9 @@ if "last_homepage_url" not in st.session_state:
 if "last_source_org" not in st.session_state:
     st.session_state.last_source_org = ""
 
+if "skipped_pages" not in st.session_state:
+    st.session_state.skipped_pages = []
+
 
 # ============================================================
 # OpenAI helpers
@@ -870,10 +873,51 @@ Prefer pages that are likely to contain actual donor/funder names, not broad hom
 
 source_org = st.text_input("Source organization name", placeholder="Example: The Climate Center")
 
+input_mode = st.radio(
+    "Choose input method",
+    [
+        "Automatically find donor/funder page from homepage",
+        "Paste exact webpage or PDF URL",
+        "Upload PDF report"
+    ],
+    help="Most users should start with the homepage option. Use the direct URL option only when you already know the exact donor page or PDF."
+)
+
+homepage_url = ""
+url = ""
+uploaded_file = None
+
+if input_mode == "Automatically find donor/funder page from homepage":
+    homepage_url = st.text_input(
+        "Organization homepage URL",
+        placeholder="Example: https://theclimatecenter.org"
+    )
+    st.markdown(
+        '<div class="small-muted">Recommended workflow: enter the organization name and homepage first. The app will then look for likely donor, funder, sponsor, supporter, annual report, or PDF pages.</div>',
+        unsafe_allow_html=True
+    )
+
+elif input_mode == "Paste exact webpage or PDF URL":
+    url = st.text_input(
+        "Exact webpage or PDF URL",
+        placeholder="Paste a direct donor page, supporter page, annual report page, or PDF link here"
+    )
+    st.markdown(
+        '<div class="small-muted">Use this when you already have the exact source page or PDF you want the app to read.</div>',
+        unsafe_allow_html=True
+    )
+
+elif input_mode == "Upload PDF report":
+    uploaded_file = st.file_uploader("Upload a PDF report", type=["pdf"])
+    st.markdown(
+        '<div class="small-muted">Use this for annual reports, impact reports, or donor PDFs saved on your computer.</div>',
+        unsafe_allow_html=True
+    )
+
 api_ready = has_openai_key()
 
-# AI is now automatic when connected.
-# If AI fails or is unavailable, the app still falls back to standard extraction in the background.
+# AI is automatic when connected. If AI fails or is unavailable,
+# the app falls back to standard extraction in the background.
 use_ai = api_ready
 
 if api_ready:
@@ -897,15 +941,15 @@ else:
             <span class="ai-off-badge">● AI not connected in this version</span>
             <div class="card-title">Standard extraction is available as a backup</div>
             <div class="card-copy">
-                This local version does not currently see an OpenAI API key. The public Streamlit app can use AI once OPENAI_API_KEY is saved in Streamlit Secrets.
-                Until then, the app will still try standard extraction.
+                This version does not currently see an OpenAI API key. The app will still try standard extraction.
+                AI discovery and extraction will turn on once OPENAI_API_KEY is added in Streamlit Secrets or local secrets.
             </div>
         </div>
         """,
         unsafe_allow_html=True
     )
 
-with st.expander("Smart AI options", expanded=True):
+with st.expander("Smart AI options", expanded=False):
     st.markdown(
         """
         <div class="info-card">
@@ -934,7 +978,7 @@ with st.expander("Smart AI options", expanded=True):
         )
     else:
         st.info(
-            "AI options are shown below, but they will only turn on once the OpenAI API key is available. "
+            "AI options are shown below, but they only turn on once the OpenAI API key is available. "
             "For local testing, add the key to `.streamlit/secrets.toml`. For the public app, keep it in Streamlit Secrets."
         )
 
@@ -996,15 +1040,9 @@ with st.expander("Smart AI options", expanded=True):
         )
 
     with st.expander("Which option should I choose?", expanded=False):
-        st.write(
-            "**Balanced + Standard scan** is the best choice for most donor pages, sponsor pages, and regular annual reports."
-        )
-        st.write(
-            "**High accuracy + Deep scan** is better when a source is very messy, very long, or the first result looks incomplete."
-        )
-        st.write(
-            "**Fast/low-cost + Quick scan** is mainly for quick testing when you only need a rough first pass."
-        )
+        st.write("**Balanced + Standard scan** is the best choice for most donor pages, sponsor pages, and regular annual reports.")
+        st.write("**High accuracy + Deep scan** is better when a source is very messy, very long, or the first result looks incomplete.")
+        st.write("**Fast/low-cost + Quick scan** is mainly for quick testing when you only need a rough first pass.")
 
     with st.expander("What does “reading depth” mean?", expanded=False):
         st.write(
@@ -1016,46 +1054,6 @@ with st.expander("Smart AI options", expanded=True):
     st.caption(
         "AI is the main extraction method when connected. Standard extraction remains in the background as a backup if AI is unavailable or returns no clean results."
     )
-
-input_mode = st.radio(
-    "Choose input method",
-    [
-        "Automatically find donor/funder page from homepage",
-        "Paste exact webpage or PDF URL",
-        "Upload PDF report"
-    ]
-)
-
-homepage_url = ""
-url = ""
-uploaded_file = None
-
-if input_mode == "Automatically find donor/funder page from homepage":
-    st.markdown(
-        '<div class="small-muted">Recommended workflow: paste only the organization homepage and let the tool discover likely donor/funder pages.</div>',
-        unsafe_allow_html=True
-    )
-    homepage_url = st.text_input(
-        "Organization homepage URL",
-        placeholder="Example: https://theclimatecenter.org"
-    )
-
-elif input_mode == "Paste exact webpage or PDF URL":
-    st.markdown(
-        '<div class="small-muted">Use this when you already have the exact donor page, annual report page, or PDF link.</div>',
-        unsafe_allow_html=True
-    )
-    url = st.text_input(
-        "Webpage or PDF URL",
-        placeholder="Paste a donor page, annual report page, or PDF link here"
-    )
-
-elif input_mode == "Upload PDF report":
-    st.markdown(
-        '<div class="small-muted">Use this for PDF reports saved on your computer.</div>',
-        unsafe_allow_html=True
-    )
-    uploaded_file = st.file_uploader("Upload a PDF report", type=["pdf"])
 
 
 # ============================================================
@@ -1546,6 +1544,182 @@ def normalize_candidate_url(url):
     return cleaned.lower()
 
 
+
+def get_domain_label(url):
+    try:
+        domain = urlparse(url).netloc.lower()
+        if domain.startswith("www."):
+            domain = domain[4:]
+        return domain or "source site"
+    except Exception:
+        return "source site"
+
+
+def friendly_page_type(candidate):
+    text = " ".join([
+        str(candidate.get("page_type", "")),
+        str(candidate.get("title", "")),
+        str(candidate.get("url", ""))
+    ]).lower()
+
+    if ".pdf" in text or "pdf" in text:
+        return "PDF report"
+    if "annual" in text and "report" in text:
+        return "Annual report page"
+    if "corporate" in text or "foundation" in text or "partner" in text:
+        return "Corporate/foundation partners page"
+    if "sponsor" in text:
+        return "Sponsor page"
+    if "supporter" in text or "supporters" in text:
+        return "Supporter page"
+    if "funder" in text or "funders" in text:
+        return "Funder page"
+    if "donor" in text or "donors" in text:
+        return "Donor page"
+    if "contributor" in text or "contributors" in text:
+        return "Contributor page"
+    return "Possible donor-related page"
+
+
+def match_strength_label(score):
+    try:
+        score = int(score)
+    except Exception:
+        score = 0
+
+    if score >= 90:
+        return "Best match"
+    if score >= 70:
+        return "Good match"
+    return "Possible match"
+
+
+def readable_candidate_label(candidate):
+    strength = match_strength_label(candidate.get("score", 0))
+    page_type = friendly_page_type(candidate)
+    domain = get_domain_label(candidate.get("url", ""))
+    title = str(candidate.get("title", "")).strip()
+
+    if not title or title.lower() in ["found page", "ai-found page", "page", "unknown"]:
+        return f"{strength} — {page_type} — {domain}"
+
+    if len(title) > 55:
+        title = title[:52].rstrip() + "..."
+
+    return f"{strength} — {page_type} — {domain} — {title}"
+
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def check_url_status(url):
+    url = str(url or "").strip()
+
+    if not url.startswith("http"):
+        return {
+            "url": url,
+            "final_url": url,
+            "status": "Broken link",
+            "status_code": None,
+            "is_usable": False,
+            "message": "This does not look like a valid web link."
+        }
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 donor-funder-extraction-tool/2.1",
+        "Accept": "text/html,application/pdf,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+
+    try:
+        response = requests.get(
+            url,
+            timeout=12,
+            headers=headers,
+            allow_redirects=True,
+            stream=True
+        )
+        status_code = response.status_code
+        final_url = response.url
+        response.close()
+
+        if 200 <= status_code < 400:
+            return {
+                "url": url,
+                "final_url": final_url,
+                "status": "Available",
+                "status_code": status_code,
+                "is_usable": True,
+                "message": "This page opened successfully."
+            }
+
+        if status_code == 404:
+            return {
+                "url": url,
+                "final_url": final_url,
+                "status": "Broken link",
+                "status_code": status_code,
+                "is_usable": False,
+                "message": "This page no longer exists or could not be found."
+            }
+
+        if status_code in [401, 403]:
+            return {
+                "url": url,
+                "final_url": final_url,
+                "status": "Website blocked access",
+                "status_code": status_code,
+                "is_usable": False,
+                "message": "The website blocked automated access to this page."
+            }
+
+        return {
+            "url": url,
+            "final_url": final_url,
+            "status": "Could not verify",
+            "status_code": status_code,
+            "is_usable": False,
+            "message": f"The page returned HTTP status {status_code}."
+        }
+
+    except requests.exceptions.Timeout:
+        return {
+            "url": url,
+            "final_url": url,
+            "status": "Could not verify",
+            "status_code": None,
+            "is_usable": False,
+            "message": "The page took too long to respond."
+        }
+    except requests.exceptions.RequestException as exc:
+        return {
+            "url": url,
+            "final_url": url,
+            "status": "Could not verify",
+            "status_code": None,
+            "is_usable": False,
+            "message": str(exc)
+        }
+
+
+def filter_usable_candidate_pages(candidates):
+    usable = []
+    skipped = []
+
+    for candidate in candidates or []:
+        status = check_url_status(candidate.get("url", ""))
+        candidate = dict(candidate)
+        candidate["page_status"] = status["status"]
+        candidate["status_code"] = status["status_code"]
+        candidate["status_message"] = status["message"]
+        candidate["final_url"] = status["final_url"]
+
+        if status["is_usable"]:
+            if status.get("final_url") and status["final_url"] != candidate.get("url"):
+                candidate["url"] = status["final_url"]
+            usable.append(candidate)
+        else:
+            skipped.append(candidate)
+
+    return usable, skipped
+
 def merge_candidate_pages(rule_candidates, ai_candidates):
     merged = {}
 
@@ -1763,6 +1937,7 @@ if input_mode == "Automatically find donor/funder page from homepage":
         st.session_state.candidate_pages = []
         st.session_state.last_homepage_url = ""
         st.session_state.last_source_org = ""
+        st.session_state.skipped_pages = []
         st.success("Cleared found pages.")
 
     if find_clicked:
@@ -1776,11 +1951,12 @@ if input_mode == "Automatically find donor/funder page from homepage":
                 ai_candidates = []
                 ai_summary = ""
 
-                with st.spinner("Scanning the website for likely donor/funder pages..."):
+                with st.status("Finding usable donor/funder pages...", expanded=True) as status:
+                    st.write("Scanning the organization website for donor, sponsor, supporter, annual report, and PDF links...")
                     rule_candidates = cached_find_pages(homepage_url, top_n=10)
 
-                if use_ai and has_openai_key():
-                    with st.spinner("AI is checking the web for stronger donor/funder page matches..."):
+                    if use_ai and has_openai_key():
+                        st.write("Asking AI to look for stronger public donor/funder page matches...")
                         try:
                             ai_candidates, ai_summary = ai_find_likely_pages(
                                 source_org=source_org,
@@ -1792,44 +1968,69 @@ if input_mode == "Automatically find donor/funder page from homepage":
                                 f"AI page discovery was unavailable, so the app used regular website scanning only. Details: {ai_error}"
                             )
 
-                candidates = merge_candidate_pages(rule_candidates, ai_candidates)
+                    st.write("Combining duplicate suggestions...")
+                    candidates = merge_candidate_pages(rule_candidates, ai_candidates)
 
-                if not candidates:
+                    st.write("Checking which suggested pages actually open...")
+                    usable_candidates, skipped_candidates = filter_usable_candidate_pages(candidates)
+
+                    st.session_state.skipped_pages = skipped_candidates
+                    status.update(label="Page discovery complete", state="complete", expanded=False)
+
+                if not usable_candidates:
                     st.warning(
-                        "No likely donor/funder pages were found. "
+                        "No usable donor/funder pages were found. The app may have found broken or blocked links only. "
                         "Try using the manual URL option with a direct donor, funder, annual report, or PDF link."
                     )
                     st.session_state.candidate_pages = []
                 else:
-                    st.session_state.candidate_pages = candidates
+                    st.session_state.candidate_pages = usable_candidates
                     st.session_state.last_homepage_url = homepage_url
                     st.session_state.last_source_org = source_org
-                    st.success(f"Found {len(candidates)} likely page(s).")
+                    st.success(f"Found {len(usable_candidates)} usable page(s).")
+
+                    if skipped_candidates:
+                        st.info(f"Skipped {len(skipped_candidates)} broken, blocked, or unavailable page(s).")
 
                     if ai_summary:
                         st.info(ai_summary)
 
             except Exception as e:
                 st.error(f"Something went wrong while finding pages: {e}")
-
     if st.session_state.candidate_pages:
-        st.subheader("Found pages")
+        st.subheader("Found usable pages")
+        st.caption("The app checked the suggested links and only shows pages that appear to open successfully.")
+
+        if st.session_state.get("skipped_pages"):
+            with st.expander(f"Skipped {len(st.session_state.skipped_pages)} broken, blocked, or unavailable page(s)", expanded=False):
+                for skipped in st.session_state.skipped_pages:
+                    status = skipped.get("page_status", "Unavailable")
+                    code = skipped.get("status_code")
+                    message = skipped.get("status_message", "This page could not be used.")
+                    code_text = f"HTTP {code}" if code else "No status code"
+                    st.write(f"**{status}** ({code_text}) — {skipped.get('url', '')}")
+                    st.caption(message)
 
         candidate_options = []
+        seen_labels = {}
 
-        for candidate in st.session_state.candidate_pages:
-            label = (
-                f"Score {candidate.get('score', 0)} | "
-                f"{candidate.get('method', 'Found')} | "
-                f"{candidate.get('title', 'Page')} | "
-                f"{candidate.get('url', '')}"
-            )
+        for idx, candidate in enumerate(st.session_state.candidate_pages, start=1):
+            base_label = readable_candidate_label(candidate)
+            label_count = seen_labels.get(base_label, 0) + 1
+            seen_labels[base_label] = label_count
+
+            if label_count > 1:
+                label = f"{base_label} ({label_count})"
+            else:
+                label = base_label
+
             candidate_options.append(label)
 
         selected_option = st.selectbox(
-            "Choose which page to extract from",
+            "Choose a source page to extract from",
             candidate_options,
-            key="candidate_page_selectbox"
+            key="candidate_page_selectbox",
+            help="Best match means the app thinks this page is highly likely to contain donor/funder information. Good match and possible match may still be useful, but should be reviewed more carefully."
         )
 
         selected_index = candidate_options.index(selected_option)
@@ -1838,8 +2039,12 @@ if input_mode == "Automatically find donor/funder page from homepage":
 
         with st.expander("Why this page was suggested", expanded=False):
             st.write(selected_candidate.get("reason", "No reason provided."))
-            st.write(f"Page type: {selected_candidate.get('page_type', 'Unknown')}")
+            st.write(f"Page type: {friendly_page_type(selected_candidate)}")
+            st.write(f"Page status: {selected_candidate.get('page_status', 'Available')}")
             st.write(f"Year: {selected_candidate.get('year', 'Unknown')}")
+            st.write(f"Source method: {selected_candidate.get('method', 'Website scan')}")
+            st.caption(f"Internal match score: {selected_candidate.get('score', 'N/A')} — kept for app logic, hidden from the main dropdown to keep the interface simple.")
+
 
         manual_candidate_url = st.text_input(
             "Optional: paste a more specific page URL to extract from instead",
@@ -1882,6 +2087,23 @@ if input_mode == "Automatically find donor/funder page from homepage":
                         "Broad annual report, impact, and thank-you pages often do not contain the actual donor list."
                     )
 
+            except requests.exceptions.HTTPError as e:
+                status_code = getattr(e.response, "status_code", None)
+                if status_code == 404:
+                    st.error(
+                        "This page no longer exists or could not be opened. Choose another suggested page, "
+                        "paste a more specific donor/supporter page, or upload a PDF version if available."
+                    )
+                elif status_code in [401, 403]:
+                    st.error(
+                        "This website blocked the app from reading the page. Try another suggested page, "
+                        "upload a PDF report, or use manual review for this source."
+                    )
+                else:
+                    st.error(
+                        "This page could not be opened. Try another suggested page, paste a direct source URL, or upload a PDF."
+                    )
+                st.caption(str(e))
             except Exception as e:
                 st.error(f"Something went wrong during extraction: {e}")
 
@@ -1921,10 +2143,21 @@ elif input_mode == "Paste exact webpage or PDF URL":
                 show_results(result_df, source_org, ai_note=ai_note)
 
             except requests.exceptions.HTTPError as e:
-                st.error(
-                    "This website blocked the app from reading the page. "
-                    "Try uploading a PDF version, using a different source page, or manually reviewing this site."
-                )
+                status_code = getattr(e.response, "status_code", None)
+                if status_code == 404:
+                    st.error(
+                        "This page no longer exists or could not be found. Try a different direct source page, "
+                        "an annual report/PDF, or manual review for this organization."
+                    )
+                elif status_code in [401, 403]:
+                    st.error(
+                        "This website blocked the app from reading the page. Try uploading a PDF version, "
+                        "using a different source page, or manually reviewing this site."
+                    )
+                else:
+                    st.error(
+                        "This page could not be opened. Try a different source page, upload a PDF, or manually review this site."
+                    )
                 st.caption(str(e))
             except Exception as e:
                 st.error(f"Something went wrong: {e}")

@@ -619,105 +619,54 @@ st.markdown(
 # Header
 # ============================================================
 
-logo_html = """
-<div class="brand-logo-inline">
-    <div class="brand-fallback">Climate<br>Cardinals</div>
-</div>
-"""
-
-if TRIMMED_BRAND_LOGO_PATH:
+def image_to_base64_data_uri(image_path):
     try:
-        with open(TRIMMED_BRAND_LOGO_PATH, "rb") as image_file:
-            encoded_logo = base64.b64encode(image_file.read()).decode("utf-8")
-
-        logo_html = f"""
-<div class="brand-logo-inline">
-    <img src="data:image/png;base64,{encoded_logo}" alt="Climate Cardinals logo">
-</div>
-"""
+        if not image_path:
+            return ""
+        with open(image_path, "rb") as image_file:
+            encoded = base64.b64encode(image_file.read()).decode("utf-8")
+        return f"data:image/png;base64,{encoded}"
     except Exception:
-        logo_html = """
-<div class="brand-logo-inline">
-    <div class="brand-fallback">Climate<br>Cardinals</div>
-</div>
-"""
+        return ""
 
-st.markdown(
-    f"""
-    <div class="brand-shell">
-        <div class="brand-topline">
-            <div class="brand-eyebrow">Climate Cardinals research tool</div>
-            {logo_html}
-        </div>
 
-        <div class="hero-title">Climate Cardinals Donor/Funder Extraction Tool</div>
+logo_data_uri = image_to_base64_data_uri(TRIMMED_BRAND_LOGO_PATH)
 
-        <div class="hero-subtitle">
-            Built for Climate Cardinals donor and funder research. Find public donor, funder,
-            sponsor, supporter, annual report, PDF, and Form 990 sources, then export a clean
-            reviewable CSV for research and outreach workflows.
-        </div>
+if logo_data_uri:
+    logo_html = (
+        '<div class="brand-logo-inline">'
+        f'<img src="{logo_data_uri}" alt="Climate Cardinals logo">'
+        '</div>'
+    )
+else:
+    logo_html = (
+        '<div class="brand-logo-inline">'
+        '<div class="brand-fallback">Climate<br>Cardinals</div>'
+        '</div>'
+    )
 
-        <div class="pill-row">
-            <span class="pill">AI-assisted discovery</span>
-            <span class="pill">AI extraction</span>
-            <span class="pill">PDF + Form 990 review</span>
-            <span class="pill">Accessible CSV export</span>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True
+header_html = (
+    '<div class="brand-shell">'
+    '<div class="brand-topline">'
+    '<div class="brand-eyebrow">Climate Cardinals research tool</div>'
+    f'{logo_html}'
+    '</div>'
+    '<div class="hero-title">Climate Cardinals Donor/Funder Extraction Tool</div>'
+    '<div class="hero-subtitle">'
+    'Built for Climate Cardinals donor and funder research. Find public donor, funder, '
+    'sponsor, supporter, annual report, PDF, and Form 990 sources, then export a clean '
+    'reviewable CSV for research and outreach workflows.'
+    '</div>'
+    '<div class="pill-row">'
+    '<span class="pill">AI-assisted discovery</span>'
+    '<span class="pill">AI extraction</span>'
+    '<span class="pill">PDF + Form 990 review</span>'
+    '<span class="pill">Accessible CSV export</span>'
+    '</div>'
+    '</div>'
 )
 
-st.markdown(
-    """
-    <div class="review-note">
-        <strong>Internal research reminder:</strong> This tool speeds up donor/funder research, but results should still be reviewed before outreach, reporting, or publishing.
-        IRS/Form 990 entries now include relationship labels to help distinguish funders from grantees or recipients.
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-with st.expander("How to use this tool", expanded=False):
-    c1, c2, c3 = st.columns(3)
-
-    with c1:
-        st.markdown(
-            """
-            <div class="step-card">
-                <div class="step-number">1</div>
-                <div class="step-title">Enter the organization</div>
-                <div class="step-copy">Type the nonprofit name. Then paste a homepage, paste a direct donor page, or upload a PDF report.</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    with c2:
-        st.markdown(
-            """
-            <div class="step-card">
-                <div class="step-number">2</div>
-                <div class="step-title">Find or read sources</div>
-                <div class="step-copy">The app searches likely donor, funder, sponsor, supporter, annual report, PDF, and Form 990 sources.</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    with c3:
-        st.markdown(
-            """
-            <div class="step-card">
-                <div class="step-number">3</div>
-                <div class="step-title">Review and download</div>
-                <div class="step-copy">Check confidence, source labels, relationship labels, and notes before downloading the CSV.</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
+st.markdown(header_html, unsafe_allow_html=True)
 
 # ============================================================
 # Session state

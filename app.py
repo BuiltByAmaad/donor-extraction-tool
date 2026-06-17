@@ -5,6 +5,8 @@ from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
 
+from PIL import Image, ImageChops
+
 import pandas as pd
 import requests
 import streamlit as st
@@ -31,11 +33,13 @@ st.set_page_config(
 # ============================================================
 
 APP_DIR = Path(__file__).parent if "__file__" in globals() else Path.cwd()
+
 LOGO_PATHS = [
     APP_DIR / "assets" / "climate-cardinals-logo.png",
     APP_DIR / "assets" / "logo.png",
     APP_DIR / "climate-cardinals-logo.png",
 ]
+
 ICON_PATHS = [
     APP_DIR / "assets" / "climate-cardinals-icon.png",
     APP_DIR / "assets" / "icon.png",
@@ -53,16 +57,49 @@ def first_existing_path(paths):
     return None
 
 
+def trim_logo_whitespace(image_path, padding=14):
+    """
+    Crops extra transparent or white whitespace around the logo before displaying it.
+    This fixes logos that have a large empty box around the actual artwork.
+    """
+    try:
+        image = Image.open(image_path).convert("RGBA")
+
+        alpha = image.getchannel("A")
+        alpha_bbox = alpha.getbbox()
+
+        if alpha_bbox:
+            bbox = alpha_bbox
+        else:
+            background = Image.new("RGBA", image.size, (255, 255, 255, 255))
+            diff = ImageChops.difference(image, background)
+            bbox = diff.getbbox()
+
+        if not bbox:
+            return str(image_path)
+
+        left, top, right, bottom = bbox
+
+        left = max(0, left - padding)
+        top = max(0, top - padding)
+        right = min(image.width, right + padding)
+        bottom = min(image.height, bottom + padding)
+
+        cropped = image.crop((left, top, right, bottom))
+
+        output_path = APP_DIR / "assets" / "_trimmed_climate_cardinals_logo.png"
+        cropped.save(output_path)
+
+        return str(output_path)
+
+    except Exception:
+        return str(image_path)
+
+
 BRAND_LOGO_PATH = first_existing_path(LOGO_PATHS)
 BRAND_ICON_PATH = first_existing_path(ICON_PATHS)
 
-# st.logo gives the deployed app/sidebar an official branded feel when supported.
-try:
-    if BRAND_LOGO_PATH and hasattr(st, "logo"):
-        st.logo(str(BRAND_LOGO_PATH), icon_image=str(BRAND_ICON_PATH) if BRAND_ICON_PATH else None)
-except Exception:
-    pass
-
+TRIMMED_BRAND_LOGO_PATH = trim_logo_whitespace(BRAND_LOGO_PATH) if BRAND_LOGO_PATH else None
 
 # ============================================================
 # Plain-English AI options
@@ -261,24 +298,62 @@ st.markdown(
             font-weight: 800;
         }
 
-        .cc-logo-wrap {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 132px;
-            border: 1px solid var(--cc-border);
-            border-radius: 20px;
-            background: #ffffff;
-            padding: 1rem;
-        }
+       .brand-topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.25rem;
+    margin-bottom: 0.75rem;
+}
 
-        .brand-fallback {
-            font-size: 1.25rem;
-            font-weight: 900;
-            color: var(--cc-red-dark);
-            text-align: center;
-            line-height: 1.1;
-        }
+.brand-logo-inline {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    max-width: 260px;
+    min-width: 180px;
+}
+
+.brand-logo-inline img {
+    max-height: 76px;
+    width: auto !important;
+    object-fit: contain;
+    display: block;
+}
+
+.brand-fallback {
+    font-size: 1.1rem;
+    font-weight: 900;
+    color: var(--cc-red-dark);
+    text-align: right;
+    line-height: 1.1;
+}
+
+.action-row {
+    margin-top: 0.65rem;
+    margin-bottom: 0.6rem;
+}
+
+.compact-divider {
+    margin-top: 1rem;
+    margin-bottom: 0.8rem;
+}
+
+@media (max-width: 900px) {
+    .brand-topline {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .brand-logo-inline {
+        justify-content: flex-start;
+        max-width: 220px;
+    }
+
+    .brand-logo-inline img {
+        max-height: 62px;
+    }
+}
 
         .step-card, .info-card, .ai-panel, .recommendation-card, .option-card, .review-note {
             background: var(--cc-card);
@@ -494,37 +569,60 @@ st.markdown(
 # Header
 # ============================================================
 
-hero_left, hero_right = st.columns([4.6, 1.35], vertical_alignment="center")
+logo_html = ""
+if TRIMMED_BRAND_LOGO_PATH:
+    import base64
 
-with hero_left:
-    st.markdown(
+    try:
+        with open(TRIMMED_BRAND_LOGO_PATH, "rb") as image_file:
+            encoded_logo = base64.b64encode(image_file.read()).decode()
+
+        logo_html = f"""
+            <div class="brand-logo-inline">
+                <img src="data:image/png;base64,{encoded_logo}" alt="Climate Cardinals logo">
+            </div>
         """
-        <div class="brand-shell">
-            <div class="brand-eyebrow">Climate Cardinals research tool</div>
-            <div class="hero-title">Climate Cardinals Donor/Funder Extraction Tool</div>
-            <div class="hero-subtitle">
-                Built for Climate Cardinals donor and funder research. Find public donor, funder,
-                sponsor, supporter, annual report, PDF, and Form 990 sources, then export a clean
-                reviewable CSV for research and outreach workflows.
+    except Exception:
+        logo_html = """
+            <div class="brand-logo-inline">
+                <div class="brand-fallback">Climate<br>Cardinals</div>
             </div>
-            <div class="pill-row">
-                <span class="pill">AI-assisted discovery</span>
-                <span class="pill">AI extraction</span>
-                <span class="pill">PDF + Form 990 review</span>
-                <span class="pill">Accessible CSV export</span>
-            </div>
+        """
+else:
+    logo_html = """
+        <div class="brand-logo-inline">
+            <div class="brand-fallback">Climate<br>Cardinals</div>
         </div>
-        """,
-        unsafe_allow_html=True
-    )
+    """
 
-with hero_right:
-    st.markdown('<div class="cc-logo-wrap">', unsafe_allow_html=True)
-    if BRAND_LOGO_PATH:
-        st.image(str(BRAND_LOGO_PATH), use_container_width=True)
-    else:
-        st.markdown('<div class="brand-fallback">Climate<br>Cardinals</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+st.markdown(
+    f"""
+    <div class="brand-shell">
+        <div class="brand-topline">
+            <div>
+                <div class="brand-eyebrow">Climate Cardinals research tool</div>
+            </div>
+            {logo_html}
+        </div>
+
+        <div class="hero-title">Climate Cardinals Donor/Funder Extraction Tool</div>
+
+        <div class="hero-subtitle">
+            Built for Climate Cardinals donor and funder research. Find public donor, funder,
+            sponsor, supporter, annual report, PDF, and Form 990 sources, then export a clean
+            reviewable CSV for research and outreach workflows.
+        </div>
+
+        <div class="pill-row">
+            <span class="pill">AI-assisted discovery</span>
+            <span class="pill">AI extraction</span>
+            <span class="pill">PDF + Form 990 review</span>
+            <span class="pill">Accessible CSV export</span>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 st.markdown(
     """
@@ -574,7 +672,6 @@ with st.expander("How to use this tool", expanded=False):
             """,
             unsafe_allow_html=True
         )
-
 
 # ============================================================
 # Session state
@@ -2527,15 +2624,18 @@ def run_multi_page_extraction(mode="all", manual_url=""):
 # ============================================================
 
 if input_mode == "Find pages from an organization homepage":
-    st.divider()
+    st.markdown('<div class="compact-divider"></div>', unsafe_allow_html=True)
 
-    col1, col2 = st.columns([1, 1])
+    st.markdown('<div class="action-row">', unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([0.18, 0.18, 0.64])
 
     with col1:
         find_clicked = st.button("Find likely pages", type="primary")
 
     with col2:
         clear_clicked = st.button("Clear found pages")
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     if clear_clicked:
         st.session_state.candidate_pages = []

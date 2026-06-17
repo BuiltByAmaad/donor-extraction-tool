@@ -1,3 +1,4 @@
+
 import json
 import os
 import re
@@ -301,7 +302,7 @@ st.markdown(
             margin-bottom: 0.35rem;
         }
 
-        .ai-badge, .ai-ready-badge, .ai-off-badge {
+        .ai-ready-badge, .ai-off-badge {
             display: inline-flex;
             align-items: center;
             gap: 0.4rem;
@@ -697,6 +698,34 @@ def chunk_text(text, max_chars=42000, overlap=1200, max_chunks=6):
     return chunks
 
 
+def normalize_money_dash(line):
+    return line.replace("–", "-").replace("—", "-")
+
+
+def normalize_name_for_dedupe(name):
+    name = str(name).strip().lower()
+    name = re.sub(r"\s+", " ", name)
+    name = re.sub(r"[^\w\s&.'-]", "", name)
+    return name
+
+
+def extract_year_from_url(url):
+    years = re.findall(r"20\d{2}", (url or "").lower())
+
+    if not years:
+        return None
+
+    return max(int(year) for year in years)
+
+
+def clean_lines(text):
+    return [line.strip() for line in text.split("\n") if line.strip()]
+
+
+# ============================================================
+# AI extraction
+# ============================================================
+
 def ai_extract_possible_donors(text, source_org, source_url, model_name, max_chunks=6):
     client = get_openai_client()
 
@@ -712,17 +741,20 @@ def ai_extract_possible_donors(text, source_org, source_url, model_name, max_chu
 You are helping Climate Cardinals review public nonprofit donor/funder sources.
 
 Task:
-Extract donor, funder, sponsor, supporter, contributor, foundation, corporate partner, agency donor, or annual fund names from the source text.
+Extract donor, funder, sponsor, supporter, contributor, foundation, corporate partner, agency donor, annual fund donor, named sponsor, or named grantor entries from the source text.
 
 Important rules:
-- Only include names that appear to be donors/funders/sponsors/supporters/contributors.
-- Do not include navigation items, menu items, staff names, board members, article paragraphs, program names, event names, social links, addresses, emails, or generic headings.
+- Only include names that clearly appear to be donors/funders/sponsors/supporters/contributors/grantors.
+- Include corporate/foundation partners only if the source describes them as donating, funding, granting, sponsoring, contributing, underwriting, or providing financial/product support.
+- Do NOT include staff names, board members, advisory councils, youth councils, program participants, partner organizations, media features, press outlets, article names, program names, event names, social links, addresses, emails, navigation items, menu items, generic headings, or award/recognition lists.
+- Do NOT include media outlets such as Forbes, The Guardian, Vice, Washington Post, Read It, etc. unless the text explicitly says they donated/funded/sponsored.
+- Do NOT include program partners such as UNICEF, Yale, Google, etc. unless the text explicitly says they donated/funded/sponsored.
 - If a line is just a tier heading, use it as the Section, but do not include it as a donor name.
-- If the source does not clearly contain a donor/funder list, return an empty donors list.
+- If the source does not clearly contain a donor/funder/sponsor list, return an empty donors list.
 - Prefer precision over quantity. It is better to return fewer clean names than many noisy names.
 - Keep names exactly as written when possible.
 - Use confidence:
-  High = clearly a donor/funder/sponsor/supporter name.
+  High = clearly a donor/funder/sponsor/supporter/contributor name.
   Medium = likely but context is not perfect.
   Low = uncertain but possibly relevant.
 
@@ -746,7 +778,7 @@ Source text:
             input=[
                 {
                     "role": "system",
-                    "content": "You extract clean nonprofit donor/funder data into strict structured JSON."
+                    "content": "You extract clean nonprofit donor/funder data into strict structured JSON. You prioritize precision and avoid staff/media/program/recognition false positives."
                 },
                 {
                     "role": "user",
@@ -782,12 +814,7 @@ Source text:
             })
 
     df = pd.DataFrame(all_rows)
-
-    if not df.empty:
-        df["Dedupe Key"] = df["Donor/Funder Name"].apply(normalize_name_for_dedupe)
-        df = df.drop_duplicates(subset=["Dedupe Key", "Source URL"])
-        df = df.drop(columns=["Dedupe Key"])
-        df = df.reset_index(drop=True)
+    df = clean_extracted_results(df, source_url=source_url)
 
     return df, " ".join([a for a in assessments if a])
 
@@ -819,7 +846,7 @@ Look for:
 - pages with donor tiers, corporate partners, foundations, agency donors, or individual donors
 
 Return direct URLs where possible.
-Prefer pages that are likely to contain actual donor/funder names, not broad homepage pages.
+Prefer pages that are likely to contain actual donor/funder names, not broad homepage pages, generic recognition pages, program pages, press/media pages, or staff/advisory pages.
 """
 
     response = client.responses.create(
@@ -915,9 +942,6 @@ elif input_mode == "Upload PDF report":
     )
 
 api_ready = has_openai_key()
-
-# AI is automatic when connected. If AI fails or is unavailable,
-# the app falls back to standard extraction in the background.
 use_ai = api_ready
 
 if api_ready:
@@ -1060,16 +1084,12 @@ with st.expander("Smart AI options", expanded=False):
 # Text extraction helpers
 # ============================================================
 
-def clean_lines(text):
-    return [line.strip() for line in text.split("\n") if line.strip()]
-
-
 @st.cache_data(show_spinner=False)
 def extract_text_from_webpage(url):
     response = requests.get(
         url,
         timeout=25,
-        headers={"User-Agent": "Mozilla/5.0 donor-funder-extraction-tool/2.0"}
+        headers={"User-Agent": "Mozilla/5.0 donor-funder-extraction-tool/2.2"}
     )
     response.raise_for_status()
 
@@ -1094,7 +1114,7 @@ def extract_text_from_pdf_url(url):
     response = requests.get(
         url,
         timeout=35,
-        headers={"User-Agent": "Mozilla/5.0 donor-funder-extraction-tool/2.0"}
+        headers={"User-Agent": "Mozilla/5.0 donor-funder-extraction-tool/2.2"}
     )
     response.raise_for_status()
 
@@ -1125,26 +1145,6 @@ def extract_text_from_uploaded_pdf(uploaded_file):
 # Rule-based donor extraction logic
 # ============================================================
 
-def normalize_money_dash(line):
-    return line.replace("–", "-").replace("—", "-")
-
-
-def normalize_name_for_dedupe(name):
-    name = str(name).strip().lower()
-    name = re.sub(r"\s+", " ", name)
-    name = re.sub(r"[^\w\s&.'-]", "", name)
-    return name
-
-
-def extract_year_from_url(url):
-    years = re.findall(r"20\d{2}", (url or "").lower())
-
-    if not years:
-        return None
-
-    return max(int(year) for year in years)
-
-
 def is_exact_donor_result_page(url):
     lower = (url or "").lower()
 
@@ -1152,7 +1152,8 @@ def is_exact_donor_result_page(url):
         "business-and-agency-donors", "business-donors", "agency-donors",
         "individual-donors", "foundation-donors", "corporate-donors",
         "annual-fund-donors", "major-donors", "donor-list", "donor-lists",
-        "funders", "supporters", "sponsors", "contributors"
+        "funders", "supporters", "sponsors", "contributors", "donor-impact",
+        "gratitude-report"
     ]
 
     return any(signal in lower for signal in exact_signals)
@@ -1172,7 +1173,9 @@ def is_donor_section_heading(line, source_org=""):
         "the numbers", "impact report", "annual report", "revenue", "expense",
         "financial", "read more", "learn more", "click here", "webinar",
         "legislators", "endorsements", "climate-safe", "letter of support",
-        "letters of support"
+        "letters of support", "media features", "advisory council", "youth council",
+        "program", "programs", "translation", "translations", "recognition",
+        "recognitions", "award", "awards", "press", "news"
     ]
 
     if any(word in lower for word in reject_words):
@@ -1186,7 +1189,8 @@ def is_donor_section_heading(line, source_org=""):
         "our supporters", "our donors", "thank you supporters",
         "thank you to our supporters", "thank you to our donors",
         "thank you to our funders", "2025 annual fund donors", "business donors",
-        "agency donors", "foundation donors"
+        "agency donors", "foundation donors", "visionary partners",
+        "mission partners", "leadership partners"
     ]
 
     if lower in exact_headings:
@@ -1204,9 +1208,10 @@ def is_donor_section_heading(line, source_org=""):
     tier_words = [
         "diamond members", "emerald members", "sapphire members", "ruby members",
         "platinum members", "gold members", "silver members", "bronze members",
-        "visionary", "champion", "leader", "supporter level", "partner level",
-        "climate leaders", "climate champions", "climate supporters", "climate giants",
-        "climate warriors", "climate heroes", "climate defenders", "climate contributors"
+        "visionary partners", "mission partners", "leadership partners",
+        "supporter level", "partner level", "climate leaders", "climate champions",
+        "climate supporters", "climate giants", "climate warriors",
+        "climate heroes", "climate defenders", "climate contributors"
     ]
 
     if any(tier in lower for tier in tier_words):
@@ -1230,7 +1235,9 @@ def is_stop_section(line):
         "statement of financial position", "expenses", "revenue", "assets",
         "liabilities", "from our director", "looking ahead", "financials",
         "audited financials", "subscribe", "newsletter", "follow us",
-        "related posts", "recent posts", "read full bio", "meet the team"
+        "related posts", "recent posts", "read full bio", "meet the team",
+        "media features", "advisory council", "youth council", "programs",
+        "translations", "recognitions", "recognition for impact"
     ]
 
     return any(stop in lower for stop in stop_keywords)
@@ -1332,7 +1339,8 @@ def is_probable_name(line):
         "endorsements", "climate-safe", "read full bio", "full bio", "bio", "biography",
         "profile", "read bio", "view bio", "meet the team", "speaker", "speakers", "watch",
         "register", "registration", "join us", "sign up", "volunteer", "petition", "download",
-        "resource", "resources"
+        "resource", "resources", "media features", "advisory councils", "young changemakers",
+        "young explorers", "read it"
     ]
 
     if len(line) < 2:
@@ -1379,15 +1387,16 @@ def source_looks_like_strong_donor_page(source_url):
 
     strong_signals = [
         "donor", "donors", "funder", "funders", "sponsor", "sponsors",
-        "supporter", "supporters", "contributors"
+        "supporter", "supporters", "contributors", "annual-report",
+        "impact-report", "gratitude-report", "partners"
     ]
 
     weak_signals_to_avoid_for_fallback = [
-        "thank-you", "gratitude", "partners", "advisors", "impact",
-        "annual-report", "annual-reports"
+        "thank-you", "gratitude", "advisors", "program", "programs",
+        "recognition", "recognitions", "press", "media", "news"
     ]
 
-    if any(signal in lower for signal in strong_signals):
+    if any(signal in lower for signal in strong_signals) and not any(signal in lower for signal in weak_signals_to_avoid_for_fallback):
         return True
 
     if any(signal in lower for signal in weak_signals_to_avoid_for_fallback):
@@ -1465,6 +1474,84 @@ def extract_possible_donors_rule_based(text, source_org, source_url):
                 })
 
     df = pd.DataFrame(rows)
+    df = clean_extracted_results(df, source_url=source_url)
+
+    return df
+
+
+# ============================================================
+# Result cleaning / false-positive control
+# ============================================================
+
+def clean_extracted_results(df, source_url=""):
+    if df is None or df.empty:
+        return pd.DataFrame(columns=[
+            "Source Organization", "Donor/Funder Name", "Donor Type", "Section",
+            "Year", "Confidence", "Notes", "Source URL", "Extraction Method"
+        ])
+
+    df = df.copy()
+
+    for col in ["Donor/Funder Name", "Donor Type", "Section", "Notes", "Source URL"]:
+        if col not in df.columns:
+            df[col] = ""
+        df[col] = df[col].astype(str)
+
+    source_lower = str(source_url or "").lower()
+
+    false_positive_contexts = [
+        "media feature", "media features", "press", "news", "article",
+        "advisory council", "youth council", "young changemaker", "young changemakers",
+        "young explorers", "speaker", "staff", "board", "program", "programs",
+        "translation", "translations", "recognition", "recognitions",
+        "climate and justice leader"
+    ]
+
+    false_positive_names = {
+        "media features", "the guardian", "read it", "forbes", "vice",
+        "the washington post", "young changemakers", "young explorers",
+        "advisory councils", "who youth council"
+    }
+
+    donor_context_words = [
+        "donor", "donors", "funder", "funders", "sponsor", "sponsors",
+        "supporter", "supporters", "contributor", "contributors", "grant",
+        "grants", "funding", "donation", "donating", "donated", "sponsored",
+        "sponsoring", "underwrite", "underwriting", "annual fund"
+    ]
+
+    def keep_row(row):
+        name = normalize_name_for_dedupe(row.get("Donor/Funder Name", ""))
+        section = str(row.get("Section", "")).lower()
+        notes = str(row.get("Notes", "")).lower()
+        donor_type = str(row.get("Donor Type", "")).lower()
+        method = str(row.get("Extraction Method", "")).lower()
+        combined = " ".join([name, section, notes, donor_type, source_lower])
+
+        if not name or len(name) < 2:
+            return False
+
+        if name in false_positive_names:
+            return False
+
+        # If the row comes from a known non-donor context, keep it only when the note/type explicitly says donation/funding/sponsorship.
+        if any(bad in combined for bad in false_positive_contexts):
+            if not any(good in combined for good in donor_context_words):
+                return False
+
+        # Program partner is often not a donor. Keep only with explicit donor/funder wording.
+        if "program partner" in donor_type or "program partner" in combined:
+            if not any(good in combined for good in donor_context_words):
+                return False
+
+        # Rule-based extraction is more fragile; require stronger context unless source itself is clearly donor-related.
+        if "standard" in method:
+            if any(bad in source_lower for bad in ["recognition", "recognitions", "/program", "/programs", "media", "press", "news"]):
+                return False
+
+        return True
+
+    df = df[df.apply(keep_row, axis=1)]
 
     if not df.empty:
         df["Dedupe Key"] = df["Donor/Funder Name"].apply(normalize_name_for_dedupe)
@@ -1517,11 +1604,16 @@ def extract_from_source(target_url, uploaded_file, source_org, use_ai_flag, mode
 
         except Exception as ai_error:
             st.warning(
-                f"AI extraction was unavailable for this source, so the app used standard extraction instead. Details: {ai_error}"
+                f"AI extraction was unavailable for this source, so the app used standard extraction if this page looked donor-related. Details: {ai_error}"
             )
 
-    rule_df = extract_possible_donors_rule_based(text, source_org, source)
-    return rule_df, source, ai_note
+    # Only use standard fallback on pages whose URL looks like a real donor/funder source.
+    # This avoids false positives from recognitions, program pages, media pages, and generic impact pages.
+    if source and source_looks_like_strong_donor_page(source):
+        rule_df = extract_possible_donors_rule_based(text, source_org, source)
+        return rule_df, source, ai_note
+
+    return pd.DataFrame(), source, ai_note
 
 
 @st.cache_data(show_spinner=False)
@@ -1542,7 +1634,6 @@ def normalize_candidate_url(url):
         cleaned = cleaned[:-1]
 
     return cleaned.lower()
-
 
 
 def get_domain_label(url):
@@ -1572,54 +1663,10 @@ def url_path_lower(url):
         return str(url or "").lower()
 
 
-def is_low_quality_discovery_page(candidate):
-    """Pages that often open successfully but are poor choices for extraction.
-    We skip these when showing source-page options so users do not accidentally
-    extract from translated CMS nodes, news/blog pages, recipes, events, etc.
-    """
-    text = candidate_text_blob(candidate)
-    path = url_path_lower(candidate.get("url", ""))
-    title = str(candidate.get("title", "")).lower()
-
-    # Generic CMS/translated paths are almost never the best extraction source,
-    # even when AI says they are possibly donor-related.
-    hard_bad_path_bits = [
-        "/node/", "/en-espanol/", "/espanol", "/es/", "/fr/", "/de/",
-        "/blog", "/blogs", "/news", "/newsroom", "/press", "/media",
-        "/article", "/articles", "/story", "/stories", "/events", "/event",
-        "/careers", "/jobs", "/volunteer", "/recipes", "/recipe"
-    ]
-
-    if any(bit in path for bit in hard_bad_path_bits):
-        return True
-
-    weak_title_bits = [
-        "en español", "español", "blog", "news", "press", "recipe",
-        "volunteer", "careers", "event", "homepage"
-    ]
-
-    if any(bit in title for bit in weak_title_bits):
-        return True
-
-    # Vague AI-found pages should not beat explicit partner/donor/report pages.
-    page_type = friendly_page_type(candidate).lower()
-    if page_type == "possible donor-related page" and not any(
-        good in text for good in [
-            "annual report", "donor", "donors", "partner", "partners",
-            "foundation", "foundations", "supporter", "supporters",
-            "sponsor", "sponsors", "funder", "funders"
-        ]
-    ):
-        return True
-
-    return False
-
-
 def friendly_page_type(candidate):
     text = candidate_text_blob(candidate)
     path = url_path_lower(candidate.get("url", ""))
 
-    # Prefer actual list pages over general informational pages.
     direct_partner_list_phrases = [
         "visionary partners", "mission partners", "leadership partners",
         "corporate partners", "foundation partners", "our partners",
@@ -1628,7 +1675,6 @@ def friendly_page_type(candidate):
     if any(phrase in text for phrase in direct_partner_list_phrases):
         return "Direct partner/donor list page"
 
-    # Prefer specific donor/funder/partner meanings over vague labels.
     if ".pdf" in path or "pdf" in text:
         if "donor" in text and "impact" in text:
             return "Donor impact PDF"
@@ -1660,8 +1706,47 @@ def friendly_page_type(candidate):
     return "Possible donor-related page"
 
 
+def is_low_quality_discovery_page(candidate):
+    text = candidate_text_blob(candidate)
+    path = url_path_lower(candidate.get("url", ""))
+    title = str(candidate.get("title", "")).lower()
+
+    hard_bad_path_bits = [
+        "/node/", "/en-espanol/", "/espanol", "/es/", "/fr/", "/de/",
+        "/blog", "/blogs", "/news", "/newsroom", "/press", "/media",
+        "/article", "/articles", "/story", "/stories", "/events", "/event",
+        "/careers", "/jobs", "/volunteer", "/recipes", "/recipe",
+        "/programs", "/program", "/recognitions", "/recognition"
+    ]
+
+    if any(bit in path for bit in hard_bad_path_bits):
+        if not any(good in text for good in ["donor", "fund", "sponsor", "supporter", "contributor", "annual report", "donor impact", "gratitude"]):
+            return True
+
+    weak_title_bits = [
+        "en español", "español", "blog", "news", "press", "recipe",
+        "volunteer", "careers", "event", "homepage", "programs",
+        "recognitions", "recognition", "media features"
+    ]
+
+    if any(bit in title for bit in weak_title_bits):
+        if not any(good in text for good in ["donor", "funder", "sponsor", "supporter", "annual report", "donor impact"]):
+            return True
+
+    page_type = friendly_page_type(candidate).lower()
+    if page_type == "possible donor-related page" and not any(
+        good in text for good in [
+            "annual report", "donor", "donors", "partner", "partners",
+            "foundation", "foundations", "supporter", "supporters",
+            "sponsor", "sponsors", "funder", "funders"
+        ]
+    ):
+        return True
+
+    return False
+
+
 def page_specificity_score(candidate):
-    """Internal ranking score. Higher = more likely to be useful to a non-technical user."""
     text = candidate_text_blob(candidate)
     path = url_path_lower(candidate.get("url", ""))
     title = str(candidate.get("title", "")).lower()
@@ -1671,12 +1756,9 @@ def page_specificity_score(candidate):
     except Exception:
         score = 60
 
-    # Hard demotion: these pages can open, but are usually bad extraction choices.
-    # Example: Feeding America /en-espanol/node/2099 opened, but only produced one weak result.
     if "/node/" in path or "/en-espanol/" in path or "/espanol" in path:
         score -= 300
 
-    # Best direct source pages: these should beat vague pages and most PDFs.
     best_path_bits = [
         "/partners", "/about/partners", "/corporate-and-foundation",
         "/foundations", "/foundation", "/donors", "/supporters",
@@ -1686,16 +1768,14 @@ def page_specificity_score(candidate):
         if bit in path:
             score += 160
 
-    # Useful report/archive pages, but usually below clean donor/partner pages.
     report_path_bits = [
         "/annual-report", "/annual-reports", "/financials",
-        "/impact-report", "/impact-reports"
+        "/impact-report", "/impact-reports", "/donor-impact"
     ]
     for bit in report_path_bits:
         if bit in path:
-            score += 55
+            score += 65
 
-    # Strong title/page-type words.
     strong_title_phrases = [
         "visionary partners", "mission partners", "leadership partners",
         "corporate partners", "foundation partners", "our partners",
@@ -1717,13 +1797,12 @@ def page_specificity_score(candidate):
     ]:
         score += 165
     elif page_type in ["annual report page", "donor impact pdf", "donor gratitude pdf"]:
-        score += 50
+        score += 55
     elif page_type == "pdf report":
         score += 25
     elif page_type == "possible donor-related page":
         score -= 110
 
-    # Informational pages about partnering should not outrank actual partner/donor lists.
     informational_phrases = [
         "how foundations partner", "why i partner", "ways to give",
         "how to partner", "become a partner", "partner with us",
@@ -1733,31 +1812,29 @@ def page_specificity_score(candidate):
         if phrase in title or phrase in text or phrase in path:
             score -= 130
 
-    # Newer dated sources are usually more useful as defaults.
-    found_year = extract_year_from_url(candidate.get("url", ""))
-    if found_year:
-        score += max(0, min(60, (found_year - 2010) * 4))
-
-    # Generic pages should lose heavily.
-    weak_path_bits = [
+    bad_context_bits = [
         "/blog", "/blogs", "/news", "/newsroom", "/press", "/media",
         "/article", "/articles", "/story", "/stories", "/events", "/event",
         "/careers", "/jobs", "/volunteer", "/recipes", "/recipe",
-        "/about-us/our-work"
+        "/about-us/our-work", "/programs", "/program", "/recognitions", "/recognition"
     ]
-    for bit in weak_path_bits:
+    for bit in bad_context_bits:
         if bit in path:
             score -= 160
 
     weak_title_bits = [
         "blog", "news", "press", "recipe", "volunteer", "careers",
-        "event", "en español", "español", "homepage", "about us", "our work"
+        "event", "en español", "español", "homepage", "about us", "our work",
+        "programs", "recognition", "recognitions", "media features"
     ]
     for bit in weak_title_bits:
         if bit in title:
             score -= 80
 
-    # If a vague page has no clean URL slug, push it far down.
+    found_year = extract_year_from_url(candidate.get("url", ""))
+    if found_year:
+        score += max(0, min(60, (found_year - 2010) * 4))
+
     if page_type == "possible donor-related page" and not any(bit in path for bit in best_path_bits + report_path_bits):
         score -= 140
 
@@ -1817,7 +1894,7 @@ def check_url_status(url):
         }
 
     headers = {
-        "User-Agent": "Mozilla/5.0 donor-funder-extraction-tool/2.1",
+        "User-Agent": "Mozilla/5.0 donor-funder-extraction-tool/2.2",
         "Accept": "text/html,application/pdf,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
 
@@ -1908,11 +1985,9 @@ def filter_usable_candidate_pages(candidates):
             if status.get("final_url") and status["final_url"] != candidate.get("url"):
                 candidate["url"] = status["final_url"]
 
-            # A page can be technically available but still be a poor extraction source.
-            # Keep it out of the main dropdown so users are guided to cleaner pages.
             if is_low_quality_discovery_page(candidate):
                 candidate["page_status"] = "Skipped as low-quality match"
-                candidate["status_message"] = "This page opens, but looks like a translated, generic, news/blog, or CMS page rather than a clean donor/funder source."
+                candidate["status_message"] = "This page opens, but looks like a translated, generic, program, recognition, news/blog, or CMS page rather than a clean donor/funder source."
                 skipped.append(candidate)
             else:
                 usable.append(candidate)
@@ -1921,6 +1996,7 @@ def filter_usable_candidate_pages(candidates):
 
     usable = rerank_candidate_pages(usable)
     return usable, skipped
+
 
 def merge_candidate_pages(rule_candidates, ai_candidates):
     merged = {}
@@ -1955,6 +2031,8 @@ def merge_candidate_pages(rule_candidates, ai_candidates):
             merged[key]["reason"] = candidate.get("reason", merged[key]["reason"])
             merged[key]["title"] = candidate.get("title", merged[key]["title"])
             merged[key]["page_type"] = candidate.get("page_type", merged[key]["page_type"])
+            if candidate.get("year") and candidate.get("year") != "Unknown":
+                merged[key]["year"] = candidate.get("year")
         else:
             merged[key] = candidate
 
@@ -1964,9 +2042,7 @@ def merge_candidate_pages(rule_candidates, ai_candidates):
     return results
 
 
-
 def candidate_year(candidate):
-    """Return a numeric year from candidate metadata or URL, if available."""
     year_value = str(candidate.get("year", "") or "")
     match = re.search(r"20\d{2}", year_value)
     if match:
@@ -1975,18 +2051,15 @@ def candidate_year(candidate):
 
 
 def is_actual_list_source(candidate):
-    """True for pages that look like actual donor/partner lists rather than informational pages."""
     text = candidate_text_blob(candidate)
     path = url_path_lower(candidate.get("url", ""))
     page_type = friendly_page_type(candidate).lower()
 
-    if page_type in [
+    if page_type not in [
         "direct partner/donor list page", "donor page", "supporter page", "sponsor page",
         "funder page", "contributor page", "partner page", "corporate partners page",
-        "corporate/foundation partners page"
+        "corporate/foundation partners page", "foundation/funder page"
     ]:
-        pass
-    else:
         return False
 
     weak_info = [
@@ -1994,9 +2067,12 @@ def is_actual_list_source(candidate):
         "become a partner", "partner with us", "/ways-to-give/corporate-and-foundations/foundations"
     ]
     if any(bit in text or bit in path for bit in weak_info):
-        # Do not treat general informational pages as list sources unless the title has a clear list phrase.
         if not any(strong in text for strong in ["visionary partners", "mission partners", "leadership partners", "our partners", "donor list", "supporter list"]):
             return False
+
+    bad_context = ["/program", "/programs", "/recognition", "/recognitions", "/press", "/media", "/news"]
+    if any(bit in path for bit in bad_context):
+        return False
 
     return True
 
@@ -2011,17 +2087,7 @@ def is_useful_extraction_candidate(candidate):
     return is_actual_list_source(candidate) or is_report_or_pdf_source(candidate) or is_exact_donor_result_page(candidate.get("url", ""))
 
 
-def get_current_year_candidate_urls(manual_url=""):
-    """Pick the best current/default sources.
-
-    Priority:
-    1. Manual override URL, if provided.
-    2. Actual direct donor/partner/supporter list pages.
-    3. Newest dated donor/report/PDF pages.
-
-    This keeps the workflow simple for non-technical users: they click one current-year button,
-    and the app starts with the most current and most direct source pages it found.
-    """
+def get_current_latest_candidate_urls(manual_url=""):
     manual_url = (manual_url or "").strip()
     if manual_url:
         return [manual_url]
@@ -2030,15 +2096,11 @@ def get_current_year_candidate_urls(manual_url=""):
     if not candidates:
         return []
 
-    # Split direct list pages from report/PDF pages.
     direct_pages = [c for c in candidates if is_actual_list_source(c)]
     report_pages = [c for c in candidates if is_report_or_pdf_source(c) or is_exact_donor_result_page(c.get("url", ""))]
 
-    # Direct current pages without a visible year can still be the best current source
-    # (example: Visionary Partners pages). Sort by display score and keep only a few.
     direct_pages = sorted(direct_pages, key=lambda c: c.get("display_score", page_specificity_score(c)), reverse=True)
 
-    # For dated sources, keep only the newest year found.
     dated_reports = [(candidate_year(c), c) for c in report_pages if candidate_year(c)]
     newest_report_pages = []
     if dated_reports:
@@ -2047,20 +2109,21 @@ def get_current_year_candidate_urls(manual_url=""):
         newest_report_pages = sorted(newest_report_pages, key=lambda c: c.get("display_score", page_specificity_score(c)), reverse=True)
 
     selected = []
-    for c in direct_pages[:3] + newest_report_pages[:3]:
+    # Keep this focused; too many current pages can produce duplicates and slow runs.
+    for c in direct_pages[:2] + newest_report_pages[:2]:
         url = c.get("url", "")
         if url and url not in selected:
             selected.append(url)
 
-    # If everything above failed, use the top ranked usable candidate.
     if not selected and st.session_state.candidate_pages:
         selected.append(st.session_state.candidate_pages[0].get("url", ""))
 
     return [url for url in selected if url]
 
+
 def get_candidate_urls_for_extraction(mode="all", manual_url=""):
     if mode in ["current", "newest"]:
-        return get_current_year_candidate_urls(manual_url=manual_url)
+        return get_current_latest_candidate_urls(manual_url=manual_url)
 
     candidate_urls = []
 
@@ -2072,13 +2135,17 @@ def get_candidate_urls_for_extraction(mode="all", manual_url=""):
 
         candidate_urls.append(candidate_url)
 
-    # Keep dropdown/ranking order while removing duplicates.
     candidate_urls = list(dict.fromkeys([url for url in candidate_urls if url]))
 
     return candidate_urls
 
+
 def combine_and_clean_results(all_results, dedupe_across_pages=False):
     combined_df = pd.concat(all_results, ignore_index=True)
+    combined_df = clean_extracted_results(combined_df)
+
+    if combined_df.empty:
+        return combined_df
 
     combined_df["Dedupe Key"] = combined_df["Donor/Funder Name"].apply(normalize_name_for_dedupe)
 
@@ -2152,7 +2219,7 @@ def show_results(result_df, source_org, ai_note="", years_display_override=None)
     if result_df.empty:
         st.warning(
             "No clear donor/funder names were extracted from this source. "
-            "Try a more specific donor, supporter, sponsor, funder, contributor, or annual report page."
+            "Try a more specific donor, supporter, sponsor, funder, contributor, annual report, or donor PDF page."
         )
         return
 
@@ -2168,10 +2235,11 @@ def show_results(result_df, source_org, ai_note="", years_display_override=None)
 
     csv = result_df.to_csv(index=False).encode("utf-8")
 
+    safe_org = re.sub(r"[^a-zA-Z0-9]+", "_", source_org.lower()).strip("_") or "organization"
     st.download_button(
         label="Download results as CSV",
         data=csv,
-        file_name=f"{source_org.lower().replace(' ', '_')}_donors.csv",
+        file_name=f"{safe_org}_donors.csv",
         mime="text/csv"
     )
 
@@ -2210,7 +2278,7 @@ def run_multi_page_extraction(mode="all", manual_url=""):
     if not all_results:
         st.warning(
             "No clear donor/funder names were extracted from the found pages. "
-            "Try pasting a specific donor/funder/supporter page into the manual override box."
+            "Try choosing another dropdown page, pasting a direct donor/funder/supporter page, or uploading a PDF."
         )
         return
 
@@ -2283,7 +2351,7 @@ if input_mode == "Automatically find donor/funder page from homepage":
 
                 if not usable_candidates:
                     st.warning(
-                        "No usable donor/funder pages were found. The app may have found broken or blocked links only. "
+                        "No usable donor/funder pages were found. The app may have found broken, blocked, or low-quality links only. "
                         "Try using the manual URL option with a direct donor, funder, annual report, or PDF link."
                     )
                     st.session_state.candidate_pages = []
@@ -2294,19 +2362,20 @@ if input_mode == "Automatically find donor/funder page from homepage":
                     st.success(f"Found {len(usable_candidates)} usable page(s).")
 
                     if skipped_candidates:
-                        st.info(f"Skipped {len(skipped_candidates)} broken, blocked, or unavailable page(s).")
+                        st.info(f"Skipped {len(skipped_candidates)} broken, blocked, unavailable, or low-quality page(s).")
 
                     if ai_summary:
                         st.info(ai_summary)
 
             except Exception as e:
                 st.error(f"Something went wrong while finding pages: {e}")
+
     if st.session_state.candidate_pages:
         st.subheader("Found usable pages")
-        st.caption("The app checked the suggested links and only shows pages that appear to open successfully.")
+        st.caption("The app checked the suggested links and only shows pages that appear to open successfully and look relevant.")
 
         if st.session_state.get("skipped_pages"):
-            with st.expander(f"Skipped {len(st.session_state.skipped_pages)} broken, blocked, or unavailable page(s)", expanded=False):
+            with st.expander(f"Skipped {len(st.session_state.skipped_pages)} broken, blocked, unavailable, or low-quality page(s)", expanded=False):
                 for skipped in st.session_state.skipped_pages:
                     status = skipped.get("page_status", "Unavailable")
                     code = skipped.get("status_code")
@@ -2347,8 +2416,7 @@ if input_mode == "Automatically find donor/funder page from homepage":
             st.write(f"Page status: {selected_candidate.get('page_status', 'Available')}")
             st.write(f"Year: {selected_candidate.get('year', 'Unknown')}")
             st.write(f"Source method: {selected_candidate.get('method', 'Website scan')}")
-            st.caption("The app ranks cleaner donor, partner, supporter, annual report, and PDF pages higher than generic, translated, newsroom, or broken pages.")
-
+            st.caption("The app ranks cleaner donor, partner, supporter, annual report, and PDF pages higher than generic, translated, program, recognition, newsroom, or broken pages.")
 
         manual_candidate_url = st.text_input(
             "Optional: paste a more specific page URL to extract from instead",
@@ -2389,7 +2457,7 @@ if input_mode == "Automatically find donor/funder page from homepage":
                     st.error("One of the selected source pages could not be opened. Try another source or upload a PDF.")
                 st.caption(str(e))
             except Exception as e:
-                st.error(f"Something went wrong during current-year extraction: {e}")
+                st.error(f"Something went wrong during current/latest extraction: {e}")
 
         if extract_all:
             try:

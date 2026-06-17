@@ -1619,6 +1619,15 @@ def friendly_page_type(candidate):
     text = candidate_text_blob(candidate)
     path = url_path_lower(candidate.get("url", ""))
 
+    # Prefer actual list pages over general informational pages.
+    direct_partner_list_phrases = [
+        "visionary partners", "mission partners", "leadership partners",
+        "corporate partners", "foundation partners", "our partners",
+        "partner list", "donor list", "supporter list", "sponsor list"
+    ]
+    if any(phrase in text for phrase in direct_partner_list_phrases):
+        return "Direct partner/donor list page"
+
     # Prefer specific donor/funder/partner meanings over vague labels.
     if ".pdf" in path or "pdf" in text:
         if "donor" in text and "impact" in text:
@@ -1688,10 +1697,12 @@ def page_specificity_score(candidate):
 
     # Strong title/page-type words.
     strong_title_phrases = [
+        "visionary partners", "mission partners", "leadership partners",
+        "corporate partners", "foundation partners", "our partners",
+        "partner list", "donor list", "supporter list", "sponsor list",
         "donors", "our donors", "supporters", "our supporters",
-        "partners", "our partners", "foundations", "foundation partners",
-        "corporate partners", "corporate and foundation", "sponsors",
-        "funders", "donor impact", "annual report"
+        "partners", "foundations", "corporate and foundation", "sponsors",
+        "funders", "donor impact", "gratitude report", "annual report"
     ]
     for phrase in strong_title_phrases:
         if phrase in title or phrase in text:
@@ -1699,17 +1710,33 @@ def page_specificity_score(candidate):
 
     page_type = friendly_page_type(candidate).lower()
     if page_type in [
+        "direct partner/donor list page",
         "corporate/foundation partners page", "corporate partners page",
         "foundation/funder page", "partner page", "donor page",
         "supporter page", "sponsor page", "funder page", "contributor page"
     ]:
-        score += 120
+        score += 165
     elif page_type in ["annual report page", "donor impact pdf", "donor gratitude pdf"]:
         score += 50
     elif page_type == "pdf report":
         score += 25
     elif page_type == "possible donor-related page":
         score -= 110
+
+    # Informational pages about partnering should not outrank actual partner/donor lists.
+    informational_phrases = [
+        "how foundations partner", "why i partner", "ways to give",
+        "how to partner", "become a partner", "partner with us",
+        "corporate and foundations/foundations"
+    ]
+    for phrase in informational_phrases:
+        if phrase in title or phrase in text or phrase in path:
+            score -= 130
+
+    # Newer dated sources are usually more useful as defaults.
+    found_year = extract_year_from_url(candidate.get("url", ""))
+    if found_year:
+        score += max(0, min(60, (found_year - 2010) * 4))
 
     # Generic pages should lose heavily.
     weak_path_bits = [
@@ -1937,36 +1964,118 @@ def merge_candidate_pages(rule_candidates, ai_candidates):
     return results
 
 
-def get_candidate_urls_for_extraction(mode="all"):
+
+def candidate_year(candidate):
+    """Return a numeric year from candidate metadata or URL, if available."""
+    year_value = str(candidate.get("year", "") or "")
+    match = re.search(r"20\d{2}", year_value)
+    if match:
+        return int(match.group(0))
+    return extract_year_from_url(candidate.get("url", ""))
+
+
+def is_actual_list_source(candidate):
+    """True for pages that look like actual donor/partner lists rather than informational pages."""
+    text = candidate_text_blob(candidate)
+    path = url_path_lower(candidate.get("url", ""))
+    page_type = friendly_page_type(candidate).lower()
+
+    if page_type in [
+        "direct partner/donor list page", "donor page", "supporter page", "sponsor page",
+        "funder page", "contributor page", "partner page", "corporate partners page",
+        "corporate/foundation partners page"
+    ]:
+        pass
+    else:
+        return False
+
+    weak_info = [
+        "how foundations partner", "why i partner", "ways to give", "how to partner",
+        "become a partner", "partner with us", "/ways-to-give/corporate-and-foundations/foundations"
+    ]
+    if any(bit in text or bit in path for bit in weak_info):
+        # Do not treat general informational pages as list sources unless the title has a clear list phrase.
+        if not any(strong in text for strong in ["visionary partners", "mission partners", "leadership partners", "our partners", "donor list", "supporter list"]):
+            return False
+
+    return True
+
+
+def is_report_or_pdf_source(candidate):
+    page_type = friendly_page_type(candidate).lower()
+    text = candidate_text_blob(candidate)
+    return page_type in ["annual report page", "donor impact pdf", "donor gratitude pdf", "pdf report", "financials/report page"] or "pdf" in text
+
+
+def is_useful_extraction_candidate(candidate):
+    return is_actual_list_source(candidate) or is_report_or_pdf_source(candidate) or is_exact_donor_result_page(candidate.get("url", ""))
+
+
+def get_current_year_candidate_urls(manual_url=""):
+    """Pick the best current/default sources.
+
+    Priority:
+    1. Manual override URL, if provided.
+    2. Actual direct donor/partner/supporter list pages.
+    3. Newest dated donor/report/PDF pages.
+
+    This keeps the workflow simple for non-technical users: they click one current-year button,
+    and the app starts with the most current and most direct source pages it found.
+    """
+    manual_url = (manual_url or "").strip()
+    if manual_url:
+        return [manual_url]
+
+    candidates = [c for c in st.session_state.candidate_pages if is_useful_extraction_candidate(c)]
+    if not candidates:
+        return []
+
+    # Split direct list pages from report/PDF pages.
+    direct_pages = [c for c in candidates if is_actual_list_source(c)]
+    report_pages = [c for c in candidates if is_report_or_pdf_source(c) or is_exact_donor_result_page(c.get("url", ""))]
+
+    # Direct current pages without a visible year can still be the best current source
+    # (example: Visionary Partners pages). Sort by display score and keep only a few.
+    direct_pages = sorted(direct_pages, key=lambda c: c.get("display_score", page_specificity_score(c)), reverse=True)
+
+    # For dated sources, keep only the newest year found.
+    dated_reports = [(candidate_year(c), c) for c in report_pages if candidate_year(c)]
+    newest_report_pages = []
+    if dated_reports:
+        newest_year = max(year for year, _ in dated_reports)
+        newest_report_pages = [c for year, c in dated_reports if year == newest_year]
+        newest_report_pages = sorted(newest_report_pages, key=lambda c: c.get("display_score", page_specificity_score(c)), reverse=True)
+
+    selected = []
+    for c in direct_pages[:3] + newest_report_pages[:3]:
+        url = c.get("url", "")
+        if url and url not in selected:
+            selected.append(url)
+
+    # If everything above failed, use the top ranked usable candidate.
+    if not selected and st.session_state.candidate_pages:
+        selected.append(st.session_state.candidate_pages[0].get("url", ""))
+
+    return [url for url in selected if url]
+
+def get_candidate_urls_for_extraction(mode="all", manual_url=""):
+    if mode in ["current", "newest"]:
+        return get_current_year_candidate_urls(manual_url=manual_url)
+
     candidate_urls = []
 
     for candidate in st.session_state.candidate_pages:
-        candidate_url = candidate["url"]
+        candidate_url = candidate.get("url", "")
 
-        if mode in ["newest", "all"]:
-            if source_is_broad_report_page(candidate_url):
-                continue
-
-            if not is_exact_donor_result_page(candidate_url):
-                continue
+        if not is_useful_extraction_candidate(candidate):
+            continue
 
         candidate_urls.append(candidate_url)
 
-    candidate_urls = list(dict.fromkeys(candidate_urls))
-
-    if mode == "newest":
-        years = [extract_year_from_url(url) for url in candidate_urls]
-        years = [year for year in years if year is not None]
-
-        if years:
-            newest_year = max(years)
-            candidate_urls = [
-                url for url in candidate_urls
-                if extract_year_from_url(url) == newest_year
-            ]
+    # Keep dropdown/ranking order while removing duplicates.
+    candidate_urls = list(dict.fromkeys([url for url in candidate_urls if url]))
 
     return candidate_urls
-
 
 def combine_and_clean_results(all_results, dedupe_across_pages=False):
     combined_df = pd.concat(all_results, ignore_index=True)
@@ -2065,18 +2174,20 @@ def show_results(result_df, source_org, ai_note=""):
     )
 
 
-def run_multi_page_extraction(mode="all"):
-    urls_to_extract = get_candidate_urls_for_extraction(mode=mode)
+def run_multi_page_extraction(mode="all", manual_url=""):
+    urls_to_extract = get_candidate_urls_for_extraction(mode=mode, manual_url=manual_url)
 
     if not urls_to_extract:
         st.warning(
-            "No exact donor/funder pages were found for this extraction mode. "
-            "Try selecting a specific page from the dropdown or pasting one into the override box."
+            "No usable donor/funder source pages were found for this extraction mode. "
+            "Try pasting a specific donor, supporter, partner, annual report, or PDF URL into the override box."
         )
         return
 
     all_results = []
-    label = "current-year donor pages" if mode == "newest" else "historical donor database"
+    label = "current-year donors" if mode in ["current", "newest"] else "all years found"
+
+    st.caption(f"Reading {len(urls_to_extract)} source page(s).")
 
     with st.spinner(f"Extracting names from {label}..."):
         for candidate_url in urls_to_extract:
@@ -2242,71 +2353,45 @@ if input_mode == "Automatically find donor/funder page from homepage":
 
         final_selected_url = manual_candidate_url.strip() if manual_candidate_url.strip() else selected_url
 
-        st.caption("Selected extraction page")
+        st.caption("Recommended starting source")
         st.write(final_selected_url)
+        st.caption("Use the dropdown above to review the recommended source. The buttons below keep the workflow simple: current donors or all years found.")
 
-        col_a, col_b, col_c = st.columns([1, 1, 1])
-
-        with col_a:
-            extract_selected = st.button("Extract selected page", type="primary")
+        col_b, col_c = st.columns([1, 1])
 
         with col_b:
-            extract_newest = st.button("Extract current-year donor pages", help="Recommended for a faster combined donor list from the newest year found.")
+            extract_newest = st.button(
+                "Extract current-year donors",
+                type="primary",
+                help="Recommended. Uses the best current direct donor/partner pages and the newest dated sources found."
+            )
 
         with col_c:
-            extract_all = st.button("Extract all years found (slower)", help="This scans multiple pages/years and may take longer or use more API credits. For quick checks, use current-year extraction first.")
-
-        if extract_selected:
-            try:
-                with st.spinner("Extracting names from selected page..."):
-                    result_df, selected_source, ai_note = extract_from_source(
-                        target_url=final_selected_url,
-                        uploaded_file=None,
-                        source_org=source_org,
-                        use_ai_flag=use_ai,
-                        model_name=model_name,
-                        max_ai_chunks=max_ai_chunks
-                    )
-
-                show_results(result_df, source_org, ai_note=ai_note)
-
-                if result_df is not None and result_df.empty:
-                    st.info(
-                        "Try another page from the dropdown or paste a more specific page URL. "
-                        "Broad annual report, impact, and thank-you pages often do not contain the actual donor list."
-                    )
-
-            except requests.exceptions.HTTPError as e:
-                status_code = getattr(e.response, "status_code", None)
-                if status_code == 404:
-                    st.error(
-                        "This page no longer exists or could not be opened. Choose another suggested page, "
-                        "paste a more specific donor/supporter page, or upload a PDF version if available."
-                    )
-                elif status_code in [401, 403]:
-                    st.error(
-                        "This website blocked the app from reading the page. Try another suggested page, "
-                        "upload a PDF report, or use manual review for this source."
-                    )
-                else:
-                    st.error(
-                        "This page could not be opened. Try another suggested page, paste a direct source URL, or upload a PDF."
-                    )
-                st.caption(str(e))
-            except Exception as e:
-                st.error(f"Something went wrong during extraction: {e}")
+            extract_all = st.button(
+                "Extract all years found (slower)",
+                help="Scans current pages plus older annual reports, donor impact PDFs, and historical sources. This may take longer and use more API credits."
+            )
 
         if extract_newest:
             try:
-                run_multi_page_extraction(mode="newest")
+                run_multi_page_extraction(mode="current", manual_url=manual_candidate_url.strip())
+            except requests.exceptions.HTTPError as e:
+                status_code = getattr(e.response, "status_code", None)
+                if status_code == 404:
+                    st.error("One of the selected source pages no longer exists. Try another source or paste a direct URL.")
+                elif status_code in [401, 403]:
+                    st.error("One of the selected source pages blocked automated access. Try a different source or upload a PDF.")
+                else:
+                    st.error("One of the selected source pages could not be opened. Try another source or upload a PDF.")
+                st.caption(str(e))
             except Exception as e:
                 st.error(f"Something went wrong during current-year extraction: {e}")
 
         if extract_all:
             try:
-                run_multi_page_extraction(mode="all")
+                run_multi_page_extraction(mode="all", manual_url=manual_candidate_url.strip())
             except Exception as e:
-                st.error(f"Something went wrong during historical extraction: {e}")
+                st.error(f"Something went wrong during all-years extraction: {e}")
 
 
 elif input_mode == "Paste exact webpage or PDF URL":

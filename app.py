@@ -1555,19 +1555,44 @@ def get_domain_label(url):
         return "source site"
 
 
-def friendly_page_type(candidate):
-    text = " ".join([
+def candidate_text_blob(candidate):
+    return " ".join([
         str(candidate.get("page_type", "")),
         str(candidate.get("title", "")),
-        str(candidate.get("url", ""))
+        str(candidate.get("url", "")),
+        str(candidate.get("reason", "")),
+        str(candidate.get("method", "")),
     ]).lower()
 
-    if ".pdf" in text or "pdf" in text:
+
+def url_path_lower(url):
+    try:
+        return urlparse(url).path.lower()
+    except Exception:
+        return str(url or "").lower()
+
+
+def friendly_page_type(candidate):
+    text = candidate_text_blob(candidate)
+    path = url_path_lower(candidate.get("url", ""))
+
+    # Prefer specific donor/funder/partner meanings over vague labels.
+    if ".pdf" in path or "pdf" in text:
+        if "donor" in text and "impact" in text:
+            return "Donor impact PDF"
+        if "gratitude" in text:
+            return "Donor gratitude PDF"
         return "PDF report"
     if "annual" in text and "report" in text:
         return "Annual report page"
-    if "corporate" in text or "foundation" in text or "partner" in text:
+    if "foundation" in text and ("partner" in text or "partners" in text or "corporate" in text):
         return "Corporate/foundation partners page"
+    if "corporate" in text and ("partner" in text or "partners" in text or "sponsor" in text):
+        return "Corporate partners page"
+    if "foundation" in text or "/foundations" in path:
+        return "Foundation/funder page"
+    if "partner" in text or "partners" in text or "/partners" in path:
+        return "Partner page"
     if "sponsor" in text:
         return "Sponsor page"
     if "supporter" in text or "supporters" in text:
@@ -1578,7 +1603,100 @@ def friendly_page_type(candidate):
         return "Donor page"
     if "contributor" in text or "contributors" in text:
         return "Contributor page"
+    if "financial" in text or "financials" in path:
+        return "Financials/report page"
     return "Possible donor-related page"
+
+
+def page_specificity_score(candidate):
+    """Internal ranking score. Higher = more likely to be useful to a non-technical user."""
+    text = candidate_text_blob(candidate)
+    path = url_path_lower(candidate.get("url", ""))
+    title = str(candidate.get("title", "")).lower()
+
+    try:
+        score = int(candidate.get("score", 60))
+    except Exception:
+        score = 60
+
+    # Strong positive signals: direct donor/funder/partner/supporter pages.
+    strong_phrases = [
+        "donor", "donors", "funder", "funders", "supporter", "supporters",
+        "sponsor", "sponsors", "contributor", "contributors", "annual fund",
+        "corporate partner", "corporate partners", "foundation partner", "foundation partners",
+        "our partners", "our donors", "our supporters", "giving tier", "donor list",
+        "donor impact", "gratitude report"
+    ]
+    for phrase in strong_phrases:
+        if phrase in text:
+            score += 24
+
+    # URL path matters a lot because users click from the dropdown.
+    exact_good_path_bits = [
+        "/partners", "/donors", "/supporters", "/sponsors", "/funders",
+        "/foundations", "/corporate", "/annual-report", "/annual-reports",
+        "/financials", "/impact-report", "/impact-reports"
+    ]
+    for bit in exact_good_path_bits:
+        if bit in path:
+            score += 30
+
+    # Annual reports/PDFs are useful, but usually should not outrank a clean partner/donor page.
+    if ".pdf" in path or "pdf" in text:
+        score += 8
+    if "annual report" in text:
+        score += 12
+
+    # Penalize vague pages that AI/website scanners often overrate.
+    vague_signals = [
+        "possible donor-related page", "found page", "unknown", "node", "generic", "homepage"
+    ]
+    for signal in vague_signals:
+        if signal in text:
+            score -= 45
+
+    # Penalize translated, generic CMS, newsroom, blog, and article pages unless they have strong donor terms.
+    weak_path_bits = [
+        "/node/", "/en-espanol/", "/es/", "/espanol", "/fr/", "/de/",
+        "/blog", "/blogs", "/news", "/newsroom", "/press", "/media",
+        "/article", "/articles", "/story", "/stories", "/events", "/event",
+        "/careers", "/jobs", "/volunteer", "/recipes", "/recipe", "/about-us/our-work"
+    ]
+    for bit in weak_path_bits:
+        if bit in path:
+            score -= 70
+
+    # Penalize titles that sound like general content, not a donor source.
+    weak_title_bits = [
+        "blog", "news", "press", "recipe", "volunteer", "careers", "event",
+        "en español", "español", "homepage", "about us", "our work"
+    ]
+    for bit in weak_title_bits:
+        if bit in title:
+            score -= 40
+
+    # Strong page types should beat generic high-score pages.
+    page_type = friendly_page_type(candidate).lower()
+    if page_type in [
+        "corporate/foundation partners page", "corporate partners page", "foundation/funder page",
+        "partner page", "donor page", "supporter page", "sponsor page", "funder page"
+    ]:
+        score += 45
+    elif page_type in ["annual report page", "pdf report", "donor impact pdf", "donor gratitude pdf"]:
+        score += 18
+    elif page_type == "possible donor-related page":
+        score -= 45
+
+    return score
+
+
+def rerank_candidate_pages(candidates):
+    reranked = []
+    for candidate in candidates or []:
+        candidate = dict(candidate)
+        candidate["display_score"] = page_specificity_score(candidate)
+        reranked.append(candidate)
+    return sorted(reranked, key=lambda item: item.get("display_score", 0), reverse=True)
 
 
 def match_strength_label(score):
@@ -1587,15 +1705,16 @@ def match_strength_label(score):
     except Exception:
         score = 0
 
-    if score >= 90:
+    if score >= 120:
         return "Best match"
-    if score >= 70:
+    if score >= 75:
         return "Good match"
     return "Possible match"
 
 
 def readable_candidate_label(candidate):
-    strength = match_strength_label(candidate.get("score", 0))
+    display_score = candidate.get("display_score", page_specificity_score(candidate))
+    strength = match_strength_label(display_score)
     page_type = friendly_page_type(candidate)
     domain = get_domain_label(candidate.get("url", ""))
     title = str(candidate.get("title", "")).strip()
@@ -1603,8 +1722,8 @@ def readable_candidate_label(candidate):
     if not title or title.lower() in ["found page", "ai-found page", "page", "unknown"]:
         return f"{strength} — {page_type} — {domain}"
 
-    if len(title) > 55:
-        title = title[:52].rstrip() + "..."
+    if len(title) > 58:
+        title = title[:55].rstrip() + "..."
 
     return f"{strength} — {page_type} — {domain} — {title}"
 
@@ -1718,6 +1837,7 @@ def filter_usable_candidate_pages(candidates):
         else:
             skipped.append(candidate)
 
+    usable = rerank_candidate_pages(usable)
     return usable, skipped
 
 def merge_candidate_pages(rule_candidates, ai_candidates):
@@ -1757,7 +1877,7 @@ def merge_candidate_pages(rule_candidates, ai_candidates):
             merged[key] = candidate
 
     results = list(merged.values())
-    results = sorted(results, key=lambda item: item.get("score", 0), reverse=True)
+    results = rerank_candidate_pages(results)
 
     return results
 
@@ -1823,10 +1943,24 @@ def show_extraction_summary(result_df):
     total_rows = len(temp_df)
     unique_names = temp_df["Dedupe Key"].nunique()
     pages_used = temp_df["Source URL"].nunique()
-    years = sorted([
-        str(year) for year in temp_df["Year"].dropna().unique()
-        if str(year).lower() not in ["unknown", "none", "nan"]
-    ])
+    raw_years = [
+        str(year).strip() for year in temp_df["Year"].dropna().unique()
+        if str(year).strip().lower() not in ["", "unknown", "none", "nan"]
+    ]
+
+    numeric_years = sorted({
+        int(year) for year in raw_years
+        if re.fullmatch(r"20\d{2}", year)
+    })
+
+    if not numeric_years:
+        years_display = "Unknown"
+    elif len(numeric_years) == 1:
+        years_display = str(numeric_years[0])
+    elif len(numeric_years) <= 4:
+        years_display = ", ".join(str(year) for year in numeric_years)
+    else:
+        years_display = f"Multiple years ({numeric_years[0]}–{numeric_years[-1]})"
 
     st.subheader("Extraction summary")
 
@@ -1835,7 +1969,7 @@ def show_extraction_summary(result_df):
     col1.metric("Total rows", total_rows)
     col2.metric("Unique names", unique_names)
     col3.metric("Pages used", pages_used)
-    col4.metric("Years included", ", ".join(years[:5]) + ("..." if len(years) > 5 else "") if years else "Unknown")
+    col4.metric("Years included", years_display)
 
     if total_rows != unique_names:
         st.info(
@@ -2043,7 +2177,7 @@ if input_mode == "Automatically find donor/funder page from homepage":
             st.write(f"Page status: {selected_candidate.get('page_status', 'Available')}")
             st.write(f"Year: {selected_candidate.get('year', 'Unknown')}")
             st.write(f"Source method: {selected_candidate.get('method', 'Website scan')}")
-            st.caption(f"Internal match score: {selected_candidate.get('score', 'N/A')} — kept for app logic, hidden from the main dropdown to keep the interface simple.")
+            st.caption("The app ranks cleaner donor, partner, supporter, annual report, and PDF pages higher than generic, translated, newsroom, or broken pages.")
 
 
         manual_candidate_url = st.text_input(
@@ -2062,10 +2196,10 @@ if input_mode == "Automatically find donor/funder page from homepage":
             extract_selected = st.button("Extract selected page", type="primary")
 
         with col_b:
-            extract_newest = st.button("Extract current-year donor pages")
+            extract_newest = st.button("Extract current-year donor pages", help="Recommended for a faster combined donor list from the newest year found.")
 
         with col_c:
-            extract_all = st.button("Extract historical donor database")
+            extract_all = st.button("Extract all years found (slower)", help="This scans multiple pages/years and may take longer or use more API credits. For quick checks, use current-year extraction first.")
 
         if extract_selected:
             try:

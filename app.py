@@ -185,7 +185,9 @@ st.markdown(
             --cc-red: #ef4444;
             --cc-red-dark: #b91c1c;
             --cc-green: #16a34a;
-            --cc-teal: #0f766e;
+            --cc-teal: #2563eb;        /* interactive accent — Climate Cardinals brand blue */
+            --cc-sky: #8ecae6;         /* light sky blue from the logo disc */
+            --cc-navy: #17285a;        /* deep navy from the logo */
             --cc-ink: #102033;
             --cc-muted: #475569;
             --cc-subtle: #64748b;
@@ -204,9 +206,11 @@ st.markdown(
 
         .stApp {
             background:
-                radial-gradient(circle at 6% -6%, rgba(22, 163, 74, 0.10), transparent 30%),
-                radial-gradient(circle at 100% -8%, rgba(239, 68, 68, 0.08), transparent 32%),
-                linear-gradient(180deg, #f8fbfa 0%, #eef6f1 100%);
+                radial-gradient(38% 32% at 7% 3%, rgba(239, 68, 68, 0.16), transparent 70%),
+                radial-gradient(36% 30% at 100% 0%, rgba(37, 99, 235, 0.15), transparent 72%),
+                radial-gradient(46% 42% at 96% 100%, rgba(142, 202, 230, 0.18), transparent 75%),
+                radial-gradient(42% 40% at 0% 100%, rgba(23, 40, 90, 0.11), transparent 75%),
+                linear-gradient(180deg, #f7fbfa 0%, #eef4f6 100%);
             background-attachment: fixed;
             color: var(--cc-ink);
         }
@@ -252,7 +256,7 @@ st.markdown(
             left: 0;
             right: 0;
             height: 6px;
-            background: linear-gradient(90deg, var(--cc-red) 0%, var(--cc-red-dark) 30%, var(--cc-green) 66%, var(--cc-teal) 100%);
+            background: linear-gradient(90deg, var(--cc-red) 0%, var(--cc-red-dark) 28%, var(--cc-sky) 64%, var(--cc-navy) 100%);
         }
         .brand-grid {
             display: flex;
@@ -322,9 +326,9 @@ st.markdown(
             margin-top: 1.1rem;
         }
         .pill {
-            border: 1px solid var(--cc-border-strong);
-            background: #f0fdf4;
-            color: #14532d;
+            border: 1px solid #cfe6f2;
+            background: #eef7fb;
+            color: #17285a;
             border-radius: 999px;
             padding: 0.44rem 0.8rem;
             font-size: 0.82rem;
@@ -511,7 +515,7 @@ st.markdown(
         }
         div[data-baseweb="input"]:focus-within {
             border-color: var(--cc-teal) !important;
-            box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.13);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235,0.13);
         }
         div[data-testid="stTextInput"] input {
             background: #ffffff !important;
@@ -560,7 +564,7 @@ st.markdown(
         .stButton > button:hover {
             transform: translateY(-1px);
             border-color: var(--cc-teal);
-            box-shadow: 0 10px 24px rgba(15, 118, 110, 0.12);
+            box-shadow: 0 10px 24px rgba(37, 99, 235,0.12);
         }
         .stButton > button[kind="primary"] {
             background: linear-gradient(135deg, var(--cc-red), var(--cc-red-dark)) !important;
@@ -624,7 +628,7 @@ st.markdown(
 
         /* ---------- Links / rules / captions ---------- */
         a {
-            color: #0f766e !important;
+            color: #2563eb !important;
             text-decoration-thickness: 1px !important;
             text-underline-offset: 4px !important;
             font-weight: 700;

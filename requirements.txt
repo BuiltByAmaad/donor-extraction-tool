@@ -6,3 +6,4 @@ pypdf
 openai
 lxml
 pillow
+jinja2

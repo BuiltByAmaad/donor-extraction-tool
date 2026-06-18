@@ -234,11 +234,13 @@ st.markdown(
 
         /* ---------- Header card ---------- */
         .brand-shell {
-            background: var(--cc-card);
-            border: 1px solid var(--cc-border);
+            background: rgba(255, 255, 255, 0.72);
+            -webkit-backdrop-filter: blur(16px) saturate(140%);
+            backdrop-filter: blur(16px) saturate(140%);
+            border: 1px solid rgba(255, 255, 255, 0.65);
             border-radius: 24px;
             padding: 1.7rem 1.9rem 1.8rem 1.9rem;
-            box-shadow: 0 20px 50px rgba(15, 32, 51, 0.09);
+            box-shadow: 0 20px 50px rgba(15, 32, 51, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.6);
             margin-bottom: 1.6rem;
             position: relative;
             overflow: hidden;
@@ -357,11 +359,13 @@ st.markdown(
 
         /* ---------- Cards ---------- */
         .step-card, .info-card, .ai-panel, .recommendation-card, .option-card, .review-note {
-            background: var(--cc-card);
-            border: 1px solid var(--cc-border);
+            background: rgba(255, 255, 255, 0.8);
+            -webkit-backdrop-filter: blur(12px) saturate(135%);
+            backdrop-filter: blur(12px) saturate(135%);
+            border: 1px solid rgba(255, 255, 255, 0.6);
             border-radius: 18px;
             padding: 1.05rem 1.15rem;
-            box-shadow: 0 10px 26px rgba(15, 32, 51, 0.05);
+            box-shadow: 0 10px 26px rgba(15, 32, 51, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.5);
         }
         .step-card {
             min-height: 122px;
@@ -402,11 +406,13 @@ st.markdown(
 
         /* ---------- Input containment card (st.container(border=True)) ---------- */
         div[data-testid="stVerticalBlockBorderWrapper"] {
-            background: var(--cc-card);
-            border: 1px solid var(--cc-border) !important;
+            background: rgba(255, 255, 255, 0.78);
+            -webkit-backdrop-filter: blur(14px) saturate(135%);
+            backdrop-filter: blur(14px) saturate(135%);
+            border: 1px solid rgba(255, 255, 255, 0.6) !important;
             border-radius: 20px !important;
             padding: 1.45rem 1.6rem 1.55rem 1.6rem;
-            box-shadow: 0 12px 34px rgba(15, 32, 51, 0.06);
+            box-shadow: 0 12px 34px rgba(15, 32, 51, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.55);
             margin-bottom: 1.5rem;
         }
         .section-eyebrow {
@@ -647,6 +653,87 @@ st.markdown(
         section[data-testid="stSidebar"] {
             background: #ffffff;
             border-right: 1px solid var(--cc-border);
+        }
+
+        /* ====================================================== */
+        /* Readability hardening: keep widgets legible regardless */
+        /* of the visitor's browser light/dark setting.           */
+        /* ====================================================== */
+        .stButton > button,
+        .stDownloadButton > button {
+            background: #ffffff !important;
+            color: var(--cc-ink) !important;
+        }
+        .stButton > button:hover,
+        .stDownloadButton > button:hover {
+            background: #ffffff !important;
+            color: var(--cc-ink) !important;
+        }
+        .stButton > button[kind="primary"],
+        .stButton > button[kind="primary"]:hover {
+            background: linear-gradient(135deg, var(--cc-red), var(--cc-red-dark)) !important;
+            color: #ffffff !important;
+        }
+        .stButton > button:disabled,
+        .stButton > button[disabled] {
+            background: #f1f5f9 !important;
+            color: #94a3b8 !important;
+        }
+
+        /* Selectbox: closed control + open dropdown popover */
+        div[data-baseweb="select"] > div {
+            background: #ffffff !important;
+            color: var(--cc-ink) !important;
+        }
+        div[data-baseweb="select"] span,
+        div[data-baseweb="select"] div {
+            color: var(--cc-ink) !important;
+        }
+        div[data-baseweb="popover"] [role="listbox"],
+        ul[role="listbox"] {
+            background: #ffffff !important;
+            border: 1px solid var(--cc-border) !important;
+            border-radius: 12px !important;
+            box-shadow: 0 16px 40px rgba(15, 32, 51, 0.16) !important;
+        }
+        li[role="option"] {
+            background: #ffffff !important;
+            color: var(--cc-ink) !important;
+        }
+        li[role="option"]:hover,
+        li[role="option"][aria-selected="true"] {
+            background: var(--cc-soft) !important;
+            color: var(--cc-ink) !important;
+        }
+
+        /* Expander header stays light, never black-on-black */
+        div[data-testid="stExpander"] summary {
+            background: transparent !important;
+            color: var(--cc-ink) !important;
+        }
+
+        /* Dataframe surface stays light */
+        div[data-testid="stDataFrame"] {
+            background: #ffffff !important;
+        }
+
+        /* Glass fallbacks: solid surfaces when blur is unsupported */
+        /* or the visitor has reduced-transparency turned on.       */
+        @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+            .brand-shell,
+            .step-card, .info-card, .ai-panel, .option-card,
+            div[data-testid="stVerticalBlockBorderWrapper"] {
+                background: #ffffff !important;
+            }
+        }
+        @media (prefers-reduced-transparency: reduce) {
+            .brand-shell,
+            .step-card, .info-card, .ai-panel, .option-card,
+            div[data-testid="stVerticalBlockBorderWrapper"] {
+                -webkit-backdrop-filter: none !important;
+                backdrop-filter: none !important;
+                background: #ffffff !important;
+            }
         }
     </style>
     """,

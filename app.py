@@ -7,7 +7,6 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from PIL import Image, ImageChops
-
 import pandas as pd
 import requests
 import streamlit as st
@@ -17,22 +16,18 @@ from pypdf import PdfReader
 
 from page_finder import find_likely_donor_pages
 
-
 # ============================================================
 # Page setup
 # ============================================================
-
 st.set_page_config(
     page_title="Climate Cardinals Donor/Funder Extraction Tool",
     page_icon="🌱",
     layout="wide"
 )
 
-
 # ============================================================
 # Brand assets
 # ============================================================
-
 APP_DIR = Path(__file__).parent if "__file__" in globals() else Path.cwd()
 ASSETS_DIR = APP_DIR / "assets"
 
@@ -69,14 +64,11 @@ def trim_logo_whitespace(image_path, padding=14, white_threshold=245):
     try:
         if image_path is None:
             return None
-
         image_path = Path(image_path)
         image = Image.open(image_path).convert("RGBA")
         alpha = image.getchannel("A")
         alpha_min, alpha_max = alpha.getextrema()
-
         bbox = None
-
         if alpha_min < 255:
             alpha_mask = alpha.point(lambda p: 255 if p > 0 else 0)
             bbox = alpha_mask.getbbox()
@@ -86,32 +78,23 @@ def trim_logo_whitespace(image_path, padding=14, white_threshold=245):
             diff = ImageChops.difference(rgb_image, white_background).convert("L")
             non_white_mask = diff.point(lambda p: 255 if p > (255 - white_threshold) else 0)
             bbox = non_white_mask.getbbox()
-
         if not bbox:
             return str(image_path)
-
         left, top, right, bottom = bbox
-
         left = max(0, left - padding)
         top = max(0, top - padding)
         right = min(image.width, right + padding)
         bottom = min(image.height, bottom + padding)
-
         if right <= left or bottom <= top:
             return str(image_path)
-
         cropped = image.crop((left, top, right, bottom))
-
         try:
             ASSETS_DIR.mkdir(parents=True, exist_ok=True)
         except Exception:
             return str(image_path)
-
         output_path = ASSETS_DIR / "_trimmed_climate_cardinals_logo.png"
         cropped.save(output_path)
-
         return str(output_path)
-
     except Exception:
         return str(image_path)
 
@@ -120,11 +103,9 @@ BRAND_LOGO_PATH = first_existing_path(LOGO_PATHS)
 BRAND_ICON_PATH = first_existing_path(ICON_PATHS)
 TRIMMED_BRAND_LOGO_PATH = trim_logo_whitespace(BRAND_LOGO_PATH) if BRAND_LOGO_PATH else None
 
-
 # ============================================================
 # Plain-English AI options
 # ============================================================
-
 AI_MODEL_OPTIONS = {
     "Balanced — recommended for most sources": {
         "model": "gpt-5.4",
@@ -192,11 +173,9 @@ RELATIONSHIP_GRANTEE = "Likely grantee/recipient"
 RELATIONSHIP_UNCLEAR = "Unclear / needs review"
 IRS_CONTEXT_NONE = "Not an IRS/Form 990 source"
 
-
 # ============================================================
 # Styling - cleaner Climate Cardinals-branded readable UI
 # ============================================================
-
 st.markdown(
     """
     <style>
@@ -213,7 +192,7 @@ st.markdown(
             --cc-bg: #f7faf9;
             --cc-card: #ffffff;
             --cc-soft: #eef7f1;
-            --cc-border: #d8e4df;
+            --cc-border: #dce7e2;
             --cc-border-strong: #b9d5c8;
             --cc-warning: #92400e;
             --cc-warning-bg: #fffbeb;
@@ -225,21 +204,23 @@ st.markdown(
 
         .stApp {
             background:
-                radial-gradient(circle at 7% 0%, rgba(22, 163, 74, 0.10), transparent 28%),
-                radial-gradient(circle at 100% 0%, rgba(239, 68, 68, 0.08), transparent 30%),
-                linear-gradient(180deg, #f8fbfa 0%, #eef7f1 100%);
+                radial-gradient(circle at 6% -6%, rgba(22, 163, 74, 0.10), transparent 30%),
+                radial-gradient(circle at 100% -8%, rgba(239, 68, 68, 0.08), transparent 32%),
+                linear-gradient(180deg, #f8fbfa 0%, #eef6f1 100%);
+            background-attachment: fixed;
             color: var(--cc-ink);
         }
 
+        /* Tighter, more focused content column */
         .block-container {
-            padding-top: 1.6rem;
-            padding-bottom: 3rem;
-            max-width: 1420px;
+            padding-top: 1.4rem;
+            padding-bottom: 3.2rem;
+            max-width: 1120px;
         }
 
         header[data-testid="stHeader"] {
             background: rgba(248, 251, 250, 0.86);
-            border-bottom: 1px solid rgba(216, 228, 223, 0.85);
+            border-bottom: 1px solid rgba(220, 231, 226, 0.85);
         }
 
         h1, h2, h3, h4, h5, h6 {
@@ -251,140 +232,140 @@ st.markdown(
             color: var(--cc-ink);
         }
 
+        /* ---------- Header card ---------- */
         .brand-shell {
             background: var(--cc-card);
             border: 1px solid var(--cc-border);
             border-radius: 24px;
-            padding: 1.35rem 1.5rem 1.45rem 1.5rem;
-            box-shadow: 0 18px 45px rgba(15, 32, 51, 0.08);
-            margin-bottom: 1rem;
+            padding: 1.7rem 1.9rem 1.8rem 1.9rem;
+            box-shadow: 0 20px 50px rgba(15, 32, 51, 0.09);
+            margin-bottom: 1.6rem;
             position: relative;
             overflow: hidden;
         }
-
         .brand-shell::before {
             content: "";
             position: absolute;
-            inset: 0 0 auto 0;
-            height: 7px;
-            background: linear-gradient(90deg, var(--cc-red), var(--cc-green), var(--cc-teal));
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 6px;
+            background: linear-gradient(90deg, var(--cc-red) 0%, var(--cc-red-dark) 30%, var(--cc-green) 66%, var(--cc-teal) 100%);
         }
-
-        .brand-topline {
+        .brand-grid {
             display: flex;
-            align-items: flex-start;
+            align-items: center;
             justify-content: space-between;
-            gap: 1.25rem;
-            margin-bottom: 0.6rem;
-            padding-top: 0.15rem;
+            gap: 1.9rem;
         }
-
+        .brand-main {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
         .brand-eyebrow {
             display: inline-flex;
             align-items: center;
             gap: 0.45rem;
-            padding: 0.35rem 0.65rem;
+            padding: 0.36rem 0.72rem;
             border-radius: 999px;
             background: #fef2f2;
             color: var(--cc-red-dark);
             border: 1px solid #fecaca;
             font-weight: 800;
-            font-size: 0.82rem;
+            font-size: 0.78rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
             white-space: nowrap;
         }
-
         .brand-logo-inline {
+            flex: 0 0 auto;
             display: flex;
-            align-items: flex-start;
-            justify-content: flex-end;
-            max-width: 250px;
-            min-width: 150px;
-            flex-shrink: 0;
+            align-items: center;
+            justify-content: center;
+            padding-left: 0.5rem;
         }
-
         .brand-logo-inline img {
-            max-height: 68px;
+            max-height: 66px;
             width: auto !important;
             object-fit: contain;
             display: block;
         }
-
         .brand-fallback {
-            font-size: 1.04rem;
+            font-size: 1.12rem;
             font-weight: 900;
             color: var(--cc-red-dark);
-            text-align: right;
+            text-align: center;
             line-height: 1.1;
         }
-
         .hero-title {
-            font-size: clamp(1.85rem, 3vw, 2.85rem);
+            font-size: clamp(1.9rem, 3vw, 2.75rem);
             font-weight: 900;
-            line-height: 1.05;
-            letter-spacing: -0.055em;
-            margin: 0.1rem 0 0.65rem 0;
+            line-height: 1.04;
+            letter-spacing: -0.045em;
+            margin: 0.85rem 0 0.7rem 0;
             color: var(--cc-ink);
         }
-
         .hero-subtitle {
             font-size: 1.02rem;
             color: var(--cc-muted);
-            max-width: 980px;
-            line-height: 1.58;
+            max-width: 640px;
+            line-height: 1.6;
             font-weight: 500;
+            margin: 0;
         }
-
         .pill-row {
             display: flex;
             gap: 0.55rem;
             flex-wrap: wrap;
-            margin-top: 0.95rem;
+            margin-top: 1.1rem;
         }
-
         .pill {
             border: 1px solid var(--cc-border-strong);
             background: #f0fdf4;
             color: #14532d;
             border-radius: 999px;
-            padding: 0.42rem 0.75rem;
+            padding: 0.44rem 0.8rem;
             font-size: 0.82rem;
             font-weight: 800;
         }
-
-        @media (max-width: 900px) {
-            .brand-topline {
+        @media (max-width: 820px) {
+            .brand-shell {
+                padding: 1.4rem 1.3rem 1.5rem 1.3rem;
+            }
+            .brand-grid {
                 flex-direction: column-reverse;
                 align-items: flex-start;
-                gap: 0.8rem;
+                gap: 1.15rem;
             }
-
             .brand-logo-inline {
                 justify-content: flex-start;
-                max-width: 220px;
-                min-width: 0;
+                padding-left: 0;
             }
-
             .brand-logo-inline img {
-                max-height: 58px;
+                max-height: 50px;
             }
-
+            .hero-subtitle {
+                max-width: 100%;
+            }
+            .hero-title {
+                margin-top: 0.6rem;
+            }
             .brand-eyebrow {
                 white-space: normal;
             }
         }
 
+        /* ---------- Cards ---------- */
         .step-card, .info-card, .ai-panel, .recommendation-card, .option-card, .review-note {
             background: var(--cc-card);
             border: 1px solid var(--cc-border);
             border-radius: 18px;
-            padding: 1rem 1.05rem;
-            box-shadow: 0 10px 28px rgba(15, 32, 51, 0.06);
+            padding: 1.05rem 1.15rem;
+            box-shadow: 0 10px 26px rgba(15, 32, 51, 0.05);
         }
-
         .step-card {
             min-height: 122px;
         }
-
         .step-number {
             display: inline-flex;
             width: 30px;
@@ -398,29 +379,60 @@ st.markdown(
             color: var(--cc-red-dark);
             margin-bottom: 0.45rem;
         }
-
         .step-title, .card-title {
             font-weight: 900;
             color: var(--cc-ink);
-            margin-bottom: 0.28rem;
+            margin-bottom: 0.3rem;
+            font-size: 1.02rem;
         }
-
         .step-copy, .card-copy {
             color: var(--cc-muted);
-            font-size: 0.96rem;
+            font-size: 0.95rem;
             line-height: 1.55;
             font-weight: 500;
         }
-
         .small-muted {
             color: var(--cc-muted);
-            font-size: 0.96rem;
-            line-height: 1.52;
-            margin-top: 0.35rem;
-            margin-bottom: 0.45rem;
+            font-size: 0.93rem;
+            line-height: 1.5;
+            margin-top: 0.5rem;
+            margin-bottom: 0;
             font-weight: 500;
         }
 
+        /* ---------- Input containment card (st.container(border=True)) ---------- */
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            background: var(--cc-card);
+            border: 1px solid var(--cc-border) !important;
+            border-radius: 20px !important;
+            padding: 1.45rem 1.6rem 1.55rem 1.6rem;
+            box-shadow: 0 12px 34px rgba(15, 32, 51, 0.06);
+            margin-bottom: 1.5rem;
+        }
+        .section-eyebrow {
+            text-transform: uppercase;
+            letter-spacing: 0.09em;
+            font-size: 0.74rem;
+            font-weight: 900;
+            color: var(--cc-teal);
+            margin-bottom: 0.2rem;
+        }
+        .section-title {
+            font-size: 1.2rem;
+            font-weight: 900;
+            color: var(--cc-ink);
+            letter-spacing: -0.02em;
+            margin: 0 0 0.3rem 0;
+        }
+        .section-sub {
+            color: var(--cc-muted);
+            font-size: 0.95rem;
+            line-height: 1.5;
+            margin: 0 0 1.15rem 0;
+            font-weight: 500;
+        }
+
+        /* ---------- AI status / option panels ---------- */
         .ai-ready-badge, .ai-off-badge {
             display: inline-flex;
             align-items: center;
@@ -429,39 +441,33 @@ st.markdown(
             padding: 0.38rem 0.72rem;
             font-size: 0.82rem;
             font-weight: 900;
-            margin-bottom: 0.55rem;
+            margin-bottom: 0.6rem;
         }
-
         .ai-ready-badge {
             border: 1px solid #bbf7d0;
             background: #f0fdf4;
             color: #166534;
         }
-
         .ai-off-badge {
             border: 1px solid #fde68a;
             background: #fffbeb;
             color: var(--cc-warning);
         }
-
         .ai-panel {
             border-color: var(--cc-border-strong);
-            margin-top: 0.6rem;
-            margin-bottom: 0.75rem;
+            margin-top: 0;
+            margin-bottom: 1.4rem;
         }
-
         .recommendation-card {
             border-color: #fecaca;
             background: #fff7f7;
             margin-top: 0.75rem;
         }
-
         .review-note {
             background: #f8fafc;
             border-color: #cbd5e1;
             margin: 0.8rem 0;
         }
-
         .mini-label {
             text-transform: uppercase;
             letter-spacing: 0.08em;
@@ -470,7 +476,6 @@ st.markdown(
             color: var(--cc-subtle);
             margin-bottom: 0.25rem;
         }
-
         .mini-value {
             font-size: 1.02rem;
             font-weight: 900;
@@ -478,6 +483,7 @@ st.markdown(
             margin-bottom: 0.25rem;
         }
 
+        /* ---------- Form labels and inputs ---------- */
         div[data-testid="stTextInput"] label,
         div[data-testid="stRadio"] label,
         div[data-testid="stFileUploader"] label,
@@ -485,126 +491,159 @@ st.markdown(
         div[data-testid="stCheckbox"] label {
             color: var(--cc-ink) !important;
             font-weight: 800 !important;
-            font-size: 0.98rem !important;
+            font-size: 0.96rem !important;
         }
-
         div[data-baseweb="input"] {
-            border-radius: 14px !important;
+            border-radius: 13px !important;
             background: #ffffff !important;
             border: 1px solid #cbd5e1 !important;
             box-shadow: 0 3px 10px rgba(15, 32, 51, 0.04);
         }
-
         div[data-baseweb="input"] > div {
             background: #ffffff !important;
-            border-radius: 14px !important;
+            border-radius: 13px !important;
         }
-
         div[data-baseweb="input"]:focus-within {
             border-color: var(--cc-teal) !important;
             box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.13);
         }
-
         div[data-testid="stTextInput"] input {
             background: #ffffff !important;
             color: var(--cc-ink) !important;
             caret-color: var(--cc-ink) !important;
             font-weight: 600 !important;
-            border-radius: 14px !important;
+            border-radius: 13px !important;
         }
-
         div[data-testid="stTextInput"] input::placeholder {
             color: #64748b !important;
             opacity: 1 !important;
             font-weight: 500 !important;
         }
-
         input {
             color: var(--cc-ink) !important;
             font-weight: 600 !important;
         }
-
+        input[type="radio"], input[type="checkbox"] {
+            accent-color: var(--cc-red);
+        }
+        div[data-testid="stRadio"] [role="radiogroup"] {
+            gap: 0.1rem;
+        }
+        div[data-testid="stRadio"] [role="radiogroup"] > label {
+            padding: 0.2rem 0;
+        }
         div[data-baseweb="select"] > div {
-            border-radius: 14px !important;
+            border-radius: 13px !important;
             background: #ffffff !important;
             border: 1px solid #cbd5e1 !important;
             color: var(--cc-ink) !important;
         }
 
+        /* ---------- Buttons ---------- */
         .stButton > button {
-            border-radius: 14px;
+            border-radius: 13px;
             border: 1px solid #cbd5e1;
-            font-weight: 850;
+            font-weight: 800;
             transition: all 0.14s ease-in-out;
-            padding: 0.7rem 1.02rem;
+            padding: 0.62rem 1.05rem;
             background: #ffffff;
             color: var(--cc-ink);
             box-shadow: 0 6px 16px rgba(15, 32, 51, 0.06);
             white-space: nowrap;
         }
-
         .stButton > button:hover {
             transform: translateY(-1px);
             border-color: var(--cc-teal);
             box-shadow: 0 10px 24px rgba(15, 118, 110, 0.12);
         }
-
         .stButton > button[kind="primary"] {
             background: linear-gradient(135deg, var(--cc-red), var(--cc-red-dark)) !important;
             color: white !important;
             border: 1px solid var(--cc-red-dark) !important;
-            box-shadow: 0 10px 24px rgba(185, 28, 28, 0.18);
+            box-shadow: 0 10px 24px rgba(185, 28, 28, 0.2);
+        }
+        .stButton > button[kind="primary"]:hover {
+            border-color: var(--cc-red-dark) !important;
+            box-shadow: 0 12px 28px rgba(185, 28, 28, 0.28);
+        }
+        .stDownloadButton > button {
+            border-radius: 13px;
+            font-weight: 800;
         }
 
+        /* ---------- Metrics / alerts / tables ---------- */
         div[data-testid="stMetric"] {
             background: var(--cc-card);
             border: 1px solid var(--cc-border);
             padding: 1rem;
-            border-radius: 18px;
-            box-shadow: 0 8px 22px rgba(15, 32, 51, 0.06);
+            border-radius: 16px;
+            box-shadow: 0 8px 22px rgba(15, 32, 51, 0.05);
         }
-
         div[data-testid="stMetricLabel"] {
             color: var(--cc-muted);
             font-weight: 800;
         }
-
         div[data-testid="stMetricValue"] {
             color: var(--cc-ink);
             font-weight: 900;
         }
-
         div[data-testid="stAlert"] {
-            border-radius: 16px;
+            border-radius: 14px;
             border: 1px solid var(--cc-border);
         }
-
         div[data-testid="stDataFrame"] {
-            border-radius: 16px;
+            border-radius: 14px;
             overflow: hidden;
             border: 1px solid var(--cc-border);
-            box-shadow: 0 12px 32px rgba(15, 32, 51, 0.08);
+            box-shadow: 0 12px 32px rgba(15, 32, 51, 0.07);
         }
 
+        /* ---------- Expanders ---------- */
+        div[data-testid="stExpander"] {
+            border: 1px solid var(--cc-border) !important;
+            border-radius: 16px !important;
+            background: var(--cc-card);
+            box-shadow: 0 6px 18px rgba(15, 32, 51, 0.05);
+            margin-bottom: 1.1rem;
+            overflow: hidden;
+        }
+        div[data-testid="stExpander"] summary {
+            font-weight: 800;
+            color: var(--cc-ink);
+            padding: 0.55rem 0.2rem;
+        }
+        div[data-testid="stExpander"] summary:hover {
+            color: var(--cc-teal);
+        }
+
+        /* ---------- Links / rules / captions ---------- */
         a {
             color: #0f766e !important;
             text-decoration-thickness: 1px !important;
             text-underline-offset: 4px !important;
             font-weight: 700;
         }
-
         hr {
             border-color: var(--cc-border);
-            margin-top: 1.8rem;
+            margin-top: 1.6rem;
             margin-bottom: 1.4rem;
         }
-
         .stCaption, [data-testid="stCaptionContainer"] {
             color: var(--cc-muted) !important;
-            font-size: 0.95rem !important;
+            font-size: 0.92rem !important;
             line-height: 1.5 !important;
         }
-
+        .footer-note {
+            color: var(--cc-muted);
+            font-size: 0.9rem;
+            line-height: 1.6;
+            font-weight: 500;
+            background: var(--cc-soft);
+            border: 1px solid var(--cc-border);
+            border-radius: 14px;
+            padding: 0.95rem 1.15rem;
+            margin-top: 0.4rem;
+        }
         section[data-testid="stSidebar"] {
             background: #ffffff;
             border-right: 1px solid var(--cc-border);
@@ -618,7 +657,6 @@ st.markdown(
 # ============================================================
 # Header
 # ============================================================
-
 def image_to_base64_data_uri(image_path):
     try:
         if not image_path:
@@ -645,12 +683,13 @@ else:
         '</div>'
     )
 
+# Header is built as one compact HTML string and rendered with unsafe_allow_html=True
+# so Streamlit never renders it as visible text or a Markdown code block.
 header_html = (
     '<div class="brand-shell">'
-    '<div class="brand-topline">'
+    '<div class="brand-grid">'
+    '<div class="brand-main">'
     '<div class="brand-eyebrow">Climate Cardinals research tool</div>'
-    f'{logo_html}'
-    '</div>'
     '<div class="hero-title">Climate Cardinals Donor/Funder Extraction Tool</div>'
     '<div class="hero-subtitle">'
     'Built for Climate Cardinals donor and funder research. Find public donor, funder, '
@@ -664,23 +703,21 @@ header_html = (
     '<span class="pill">Accessible CSV export</span>'
     '</div>'
     '</div>'
+    f'{logo_html}'
+    '</div>'
+    '</div>'
 )
-
 st.markdown(header_html, unsafe_allow_html=True)
 
 # ============================================================
 # Session state
 # ============================================================
-
 if "candidate_pages" not in st.session_state:
     st.session_state.candidate_pages = []
-
 if "last_homepage_url" not in st.session_state:
     st.session_state.last_homepage_url = ""
-
 if "last_source_org" not in st.session_state:
     st.session_state.last_source_org = ""
-
 if "skipped_pages" not in st.session_state:
     st.session_state.skipped_pages = []
 
@@ -688,7 +725,6 @@ if "skipped_pages" not in st.session_state:
 # ============================================================
 # OpenAI helpers
 # ============================================================
-
 def get_secret_value(name, default=""):
     try:
         return st.secrets.get(name, default)
@@ -706,30 +742,24 @@ def has_openai_key():
 
 def get_openai_client():
     api_key = get_openai_api_key()
-
     if not api_key:
         return None
-
     return OpenAI(api_key=api_key)
 
 
 def safe_json_loads(raw_text):
     if not raw_text:
         return None
-
     try:
         return json.loads(raw_text)
     except Exception:
         pass
-
     match = re.search(r"\{.*\}", raw_text, flags=re.DOTALL)
-
     if match:
         try:
             return json.loads(match.group(0))
         except Exception:
             return None
-
     return None
 
 
@@ -811,22 +841,16 @@ def build_structured_text_format(name, schema):
 
 def chunk_text(text, max_chars=42000, overlap=1200, max_chunks=6):
     text = text or ""
-
     if len(text) <= max_chars:
         return [text]
-
     chunks = []
     start = 0
-
     while start < len(text) and len(chunks) < max_chunks:
         end = min(start + max_chars, len(text))
         chunks.append(text[start:end])
-
         if end >= len(text):
             break
-
         start = max(0, end - overlap)
-
     return chunks
 
 
@@ -843,10 +867,8 @@ def normalize_name_for_dedupe(name):
 
 def extract_year_from_url(url):
     years = re.findall(r"20\d{2}", (url or "").lower())
-
     if not years:
         return None
-
     return max(int(year) for year in years)
 
 
@@ -857,12 +879,10 @@ def clean_lines(text):
 # ============================================================
 # IRS/Form 990 helpers
 # ============================================================
-
 def detect_irs_form_context(source_url="", text=""):
     lower_url = str(source_url or "").lower()
     lower_text = str(text or "").lower()
     combined = f"{lower_url} {lower_text[:20000]}"
-
     irs_url_signals = [
         "irs", "form-990", "form990", "990-pf", "990pf", "990_pf",
         "propublica", "nonprofitexplorer", "taxexemptworld", "causeiq",
@@ -875,9 +895,7 @@ def detect_irs_form_context(source_url="", text=""):
         "grants paid", "contributions, gifts, grants paid", "recipient organization",
         "recipient's name", "grantee", "recipient"
     ]
-
     is_irs_like = any(signal in lower_url for signal in irs_url_signals) or any(signal in lower_text for signal in irs_text_signals)
-
     if not is_irs_like:
         return {
             "is_irs": False,
@@ -885,7 +903,6 @@ def detect_irs_form_context(source_url="", text=""):
             "default_relationship": RELATIONSHIP_FUNDER,
             "warning": ""
         }
-
     grants_paid_signals = [
         "grants and other assistance", "grants paid", "contributions, gifts, grants paid",
         "schedule i", "part ii grants", "part xv", "recipient organization",
@@ -895,7 +912,6 @@ def detect_irs_form_context(source_url="", text=""):
         "990-pf", "990 pf", "return of private foundation", "private foundation",
         "form 990-pf", "part xv"
     ]
-
     if any(signal in combined for signal in foundation_signals) and any(signal in combined for signal in grants_paid_signals):
         return {
             "is_irs": True,
@@ -903,7 +919,6 @@ def detect_irs_form_context(source_url="", text=""):
             "default_relationship": RELATIONSHIP_GRANTEE,
             "warning": "This appears to be a foundation filing where listed organizations may be grant recipients, not donors to the source organization."
         }
-
     if any(signal in combined for signal in grants_paid_signals):
         return {
             "is_irs": True,
@@ -911,7 +926,6 @@ def detect_irs_form_context(source_url="", text=""):
             "default_relationship": RELATIONSHIP_GRANTEE,
             "warning": "This appears to be a grants-paid section. Listed organizations may be grantees/recipients, not funders."
         }
-
     if "schedule b" in combined or "schedule of contributors" in combined:
         return {
             "is_irs": True,
@@ -919,7 +933,6 @@ def detect_irs_form_context(source_url="", text=""):
             "default_relationship": RELATIONSHIP_FUNDER,
             "warning": "This appears to involve contributors, but entries still need review because public filings can be incomplete or context-specific."
         }
-
     return {
         "is_irs": True,
         "label": "Possible IRS/Form 990 source — funding direction unclear",
@@ -933,7 +946,6 @@ def normalize_relationship(value, fallback=RELATIONSHIP_FUNDER):
     allowed = {RELATIONSHIP_FUNDER, RELATIONSHIP_GRANTEE, RELATIONSHIP_UNCLEAR}
     if value in allowed:
         return value
-
     lower = value.lower()
     if "grantee" in lower or "recipient" in lower:
         return RELATIONSHIP_GRANTEE
@@ -941,7 +953,6 @@ def normalize_relationship(value, fallback=RELATIONSHIP_FUNDER):
         return RELATIONSHIP_UNCLEAR
     if "funder" in lower or "donor" in lower or "sponsor" in lower:
         return RELATIONSHIP_FUNDER
-
     return fallback
 
 
@@ -958,18 +969,14 @@ def is_irs_candidate_source(candidate):
 # ============================================================
 # AI extraction
 # ============================================================
-
 def ai_extract_possible_donors(text, source_org, source_url, model_name, max_chunks=6):
     client = get_openai_client()
-
     if client is None:
         raise RuntimeError("OpenAI API key is missing. Add OPENAI_API_KEY in Streamlit Secrets.")
-
     chunks = chunk_text(text, max_chars=42000, overlap=1200, max_chunks=max_chunks)
     all_rows = []
     assessments = []
     irs_context = detect_irs_form_context(source_url, text)
-
     for idx, chunk in enumerate(chunks, start=1):
         prompt = f"""
 You are helping Climate Cardinals review public nonprofit donor/funder sources.
@@ -1021,7 +1028,6 @@ Source text:
 {chunk}
 \"\"\"
 """
-
         response = client.responses.create(
             model=model_name,
             input=[
@@ -1036,26 +1042,19 @@ Source text:
             ],
             text=build_structured_text_format("donor_extraction_result", donor_extraction_schema())
         )
-
         parsed = safe_json_loads(response.output_text)
-
         if not parsed:
             continue
-
         assessments.append(parsed.get("source_assessment", ""))
-
         for donor in parsed.get("donors", []):
             name = str(donor.get("name", "")).strip()
-
             if not name:
                 continue
-
             relationship = normalize_relationship(
                 donor.get("relationship_to_source", ""),
                 fallback=irs_context.get("default_relationship", RELATIONSHIP_FUNDER)
             )
             irs_form_context = str(donor.get("irs_form_context", "")).strip() or irs_context.get("label", IRS_CONTEXT_NONE)
-
             all_rows.append({
                 "Source Organization": source_org or "Unknown organization",
                 "Donor/Funder Name": name,
@@ -1069,19 +1068,15 @@ Source text:
                 "Source URL": source_url or "Uploaded PDF",
                 "Extraction Method": "AI-assisted"
             })
-
     df = pd.DataFrame(all_rows)
     df = clean_extracted_results(df, source_url=source_url)
-
     return df, " ".join([a for a in assessments if a])
 
 
 def ai_find_likely_pages(source_org, homepage_url, model_name):
     client = get_openai_client()
-
     if client is None:
         raise RuntimeError("OpenAI API key is missing. Add OPENAI_API_KEY in Streamlit Secrets.")
-
     prompt = f"""
 Find likely public donor/funder/supporter/sponsor pages for this nonprofit.
 
@@ -1108,7 +1103,6 @@ Return direct URLs where possible.
 Prefer pages that are likely to contain actual donor/funder names, not broad homepage pages, generic recognition pages, program pages, press/media pages, or staff/advisory pages.
 If recommending IRS/Form 990 sources, note that the source may require grantee/funder relationship review.
 """
-
     response = client.responses.create(
         model=model_name,
         tools=[{"type": "web_search"}],
@@ -1124,23 +1118,16 @@ If recommending IRS/Form 990 sources, note that the source may require grantee/f
         ],
         text=build_structured_text_format("donor_page_discovery_result", page_discovery_schema())
     )
-
     parsed = safe_json_loads(response.output_text)
-
     if not parsed:
         return [], "AI did not return usable page results."
-
     pages = []
-
     for page in parsed.get("pages", []):
         page_url = str(page.get("url", "")).strip()
-
         if not page_url.startswith("http"):
             continue
-
         confidence = page.get("confidence", "Medium")
         score = 95 if confidence == "High" else 82 if confidence == "Medium" else 65
-
         pages.append({
             "score": score,
             "url": page_url,
@@ -1150,114 +1137,110 @@ If recommending IRS/Form 990 sources, note that the source may require grantee/f
             "year": page.get("year", "Unknown"),
             "method": "AI web search"
         })
-
     return pages, parsed.get("summary", "")
 
 
 # ============================================================
 # Inputs and AI UX
 # ============================================================
-
-source_org = st.text_input("Source organization name", placeholder="Example: The Climate Center")
-
-input_mode = st.radio(
-    "What source do you want to start with?",
-    [
-        "Find pages from an organization homepage",
-        "Use an exact webpage or PDF URL",
-        "Upload a PDF report"
-    ],
-    help="Most users should start with the homepage option. Use the direct URL option only when you already know the exact donor page, annual report, Form 990 source, or PDF."
-)
-
 homepage_url = ""
 url = ""
 uploaded_file = None
 
-if input_mode == "Find pages from an organization homepage":
-    homepage_url = st.text_input(
-        "Organization homepage URL",
-        placeholder="Example: https://theclimatecenter.org"
-    )
+with st.container(border=True):
     st.markdown(
-        '<div class="small-muted">Best starting point: paste the organization’s main website. The app will look for likely donor, funder, sponsor, supporter, annual report, PDF, and IRS/Form 990 sources.</div>',
+        '<div class="section-eyebrow">Get started</div>'
+        '<div class="section-title">Choose your source</div>'
+        '<div class="section-sub">Tell the tool which organization you’re researching and where it should start looking.</div>',
         unsafe_allow_html=True
     )
 
-elif input_mode == "Use an exact webpage or PDF URL":
-    url = st.text_input(
-        "Exact webpage or PDF URL",
-        placeholder="Paste a direct donor page, supporter page, annual report page, Form 990 source, or PDF link here"
-    )
-    st.markdown(
-        '<div class="small-muted">Use this when you already have the exact source page, IRS/Form 990 page, or PDF you want the app to read.</div>',
-        unsafe_allow_html=True
+    source_org = st.text_input("Source organization name", placeholder="Example: The Climate Center")
+
+    input_mode = st.radio(
+        "What source do you want to start with?",
+        [
+            "Find pages from an organization homepage",
+            "Use an exact webpage or PDF URL",
+            "Upload a PDF report"
+        ],
+        help="Most users should start with the homepage option. Use the direct URL option only when you already know the exact donor page, annual report, Form 990 source, or PDF."
     )
 
-elif input_mode == "Upload a PDF report":
-    uploaded_file = st.file_uploader("Upload a PDF report", type=["pdf"])
-    st.markdown(
-        '<div class="small-muted">Use this for annual reports, impact reports, donor PDFs, IRS/Form 990 PDFs, or saved reports on your computer.</div>',
-        unsafe_allow_html=True
-    )
+    if input_mode == "Find pages from an organization homepage":
+        homepage_url = st.text_input(
+            "Organization homepage URL",
+            placeholder="Example: https://theclimatecenter.org"
+        )
+        st.markdown(
+            '<div class="small-muted">Best starting point: paste the organization’s main website. The app will look for likely donor, funder, sponsor, supporter, annual report, PDF, and IRS/Form 990 sources.</div>',
+            unsafe_allow_html=True
+        )
+    elif input_mode == "Use an exact webpage or PDF URL":
+        url = st.text_input(
+            "Exact webpage or PDF URL",
+            placeholder="Paste a direct donor page, supporter page, annual report page, Form 990 source, or PDF link here"
+        )
+        st.markdown(
+            '<div class="small-muted">Use this when you already have the exact source page, IRS/Form 990 page, or PDF you want the app to read.</div>',
+            unsafe_allow_html=True
+        )
+    elif input_mode == "Upload a PDF report":
+        uploaded_file = st.file_uploader("Upload a PDF report", type=["pdf"])
+        st.markdown(
+            '<div class="small-muted">Use this for annual reports, impact reports, donor PDFs, IRS/Form 990 PDFs, or saved reports on your computer.</div>',
+            unsafe_allow_html=True
+        )
 
 api_ready = has_openai_key()
 use_ai = api_ready
 
 if api_ready:
     st.markdown(
-        """
-        <div class="ai-panel">
-            <span class="ai-ready-badge">● AI is ready</span>
-            <div class="card-title">Smart extraction is turned on automatically</div>
-            <div class="card-copy">
-                The app will use AI first to find likely donor/funder pages and clean results from messy webpages, PDFs, and IRS/Form 990 sources.
-                If AI is unavailable for a source, the app will quietly fall back to standard extraction only when the page looks donor-related.
-            </div>
-        </div>
-        """,
+        '<div class="ai-panel">'
+        '<span class="ai-ready-badge">● AI is ready</span>'
+        '<div class="card-title">Smart extraction is turned on automatically</div>'
+        '<div class="card-copy">'
+        'The app will use AI first to find likely donor/funder pages and clean results from messy webpages, PDFs, and IRS/Form 990 sources. '
+        'If AI is unavailable for a source, the app will quietly fall back to standard extraction only when the page looks donor-related.'
+        '</div>'
+        '</div>',
         unsafe_allow_html=True
     )
 else:
     st.markdown(
-        """
-        <div class="ai-panel">
-            <span class="ai-off-badge">● AI not connected in this version</span>
-            <div class="card-title">Standard extraction is available as a backup</div>
-            <div class="card-copy">
-                This version does not currently see an OpenAI API key. The app will still try conservative standard extraction.
-                AI discovery, IRS/Form 990 relationship review, and extraction will turn on once OPENAI_API_KEY is added in Streamlit Secrets or local secrets.
-            </div>
-        </div>
-        """,
+        '<div class="ai-panel">'
+        '<span class="ai-off-badge">● AI not connected in this version</span>'
+        '<div class="card-title">Standard extraction is available as a backup</div>'
+        '<div class="card-copy">'
+        'This version does not currently see an OpenAI API key. The app will still try conservative standard extraction. '
+        'AI discovery, IRS/Form 990 relationship review, and extraction will turn on once OPENAI_API_KEY is added in Streamlit Secrets or local secrets.'
+        '</div>'
+        '</div>',
         unsafe_allow_html=True
     )
 
 with st.expander("Smart AI options", expanded=False):
     st.markdown(
-        """
-        <div class="info-card">
-            <div class="card-title">What does AI do here?</div>
-            <div class="card-copy">
-                AI helps the app understand messy donor pages, sponsor lists, annual reports, PDFs, and IRS/Form 990 sources more intelligently than basic keyword rules.
-                It can help find better source pages and return cleaner donor/funder names with confidence and relationship notes.
-            </div>
-        </div>
-        """,
+        '<div class="info-card">'
+        '<div class="card-title">What does AI do here?</div>'
+        '<div class="card-copy">'
+        'AI helps the app understand messy donor pages, sponsor lists, annual reports, PDFs, and IRS/Form 990 sources more intelligently than basic keyword rules. '
+        'It can help find better source pages and return cleaner donor/funder names with confidence and relationship notes.'
+        '</div>'
+        '</div>',
         unsafe_allow_html=True
     )
 
     if api_ready:
         st.markdown(
-            """
-            <div class="recommendation-card">
-                <div class="card-title">Recommended default</div>
-                <div class="card-copy">
-                    For most work, leave this on <strong>Balanced</strong> and <strong>Standard scan</strong>.
-                    These settings are designed to give strong results without using more API credits than necessary.
-                </div>
-            </div>
-            """,
+            '<div class="recommendation-card">'
+            '<div class="card-title">Recommended default</div>'
+            '<div class="card-copy">'
+            'For most work, leave this on <strong>Balanced</strong> and <strong>Standard scan</strong>. '
+            'These settings are designed to give strong results without using more API credits than necessary.'
+            '</div>'
+            '</div>',
             unsafe_allow_html=True
         )
     else:
@@ -1273,7 +1256,6 @@ with st.expander("Smart AI options", expanded=False):
         disabled=not api_ready,
         help="Choose how strong the AI should be. Balanced is recommended for most work."
     )
-
     model_name = AI_MODEL_OPTIONS[model_choice]["model"]
     selected_model_info = AI_MODEL_OPTIONS[model_choice]
 
@@ -1287,39 +1269,32 @@ with st.expander("Smart AI options", expanded=False):
             "Deeper scans can find more names in long reports, but may take longer and use more API credits."
         )
     )
-
     max_ai_chunks = AI_READING_OPTIONS[reading_choice]["chunks"]
     selected_reading_info = AI_READING_OPTIONS[reading_choice]
 
-    col_ai_1, col_ai_2 = st.columns(2)
-
+    col_ai_1, col_ai_2 = st.columns(2, gap="small")
     with col_ai_1:
         st.markdown(
-            f"""
-            <div class="option-card">
-                <div class="mini-label">Selected AI quality</div>
-                <div class="mini-value">{selected_model_info['label']}</div>
-                <div class="card-copy">
-                    {selected_model_info['short']}<br><br>
-                    <strong>Cost level:</strong> {selected_model_info['cost']}
-                </div>
-            </div>
-            """,
+            '<div class="option-card">'
+            '<div class="mini-label">Selected AI quality</div>'
+            f'<div class="mini-value">{selected_model_info["label"]}</div>'
+            '<div class="card-copy">'
+            f'{selected_model_info["short"]}<br><br>'
+            f'<strong>Cost level:</strong> {selected_model_info["cost"]}'
+            '</div>'
+            '</div>',
             unsafe_allow_html=True
         )
-
     with col_ai_2:
         st.markdown(
-            f"""
-            <div class="option-card">
-                <div class="mini-label">Selected reading depth</div>
-                <div class="mini-value">{selected_reading_info['label']}</div>
-                <div class="card-copy">
-                    {selected_reading_info['short']}<br><br>
-                    <strong>Best for:</strong> {selected_reading_info['best_for']}
-                </div>
-            </div>
-            """,
+            '<div class="option-card">'
+            '<div class="mini-label">Selected reading depth</div>'
+            f'<div class="mini-value">{selected_reading_info["label"]}</div>'
+            '<div class="card-copy">'
+            f'{selected_reading_info["short"]}<br><br>'
+            f'<strong>Best for:</strong> {selected_reading_info["best_for"]}'
+            '</div>'
+            '</div>',
             unsafe_allow_html=True
         )
 
@@ -1343,7 +1318,6 @@ with st.expander("Smart AI options", expanded=False):
 # ============================================================
 # Text extraction helpers
 # ============================================================
-
 @st.cache_data(show_spinner=False)
 def extract_text_from_webpage(url):
     response = requests.get(
@@ -1352,20 +1326,15 @@ def extract_text_from_webpage(url):
         headers={"User-Agent": "Mozilla/5.0 donor-funder-extraction-tool/2.3"}
     )
     response.raise_for_status()
-
     soup = BeautifulSoup(response.text, "lxml")
-
     for tag in soup([
         "script", "style", "header", "nav", "footer", "aside",
         "form", "noscript", "svg", "button"
     ]):
         tag.decompose()
-
     main = soup.find("main") or soup.find("article") or soup.body
-
     if main is None:
         return soup.get_text("\n", strip=True)
-
     return main.get_text("\n", strip=True)
 
 
@@ -1377,37 +1346,30 @@ def extract_text_from_pdf_url(url):
         headers={"User-Agent": "Mozilla/5.0 donor-funder-extraction-tool/2.3"}
     )
     response.raise_for_status()
-
     reader = PdfReader(BytesIO(response.content))
     text = ""
-
     for page in reader.pages:
         page_text = page.extract_text()
         if page_text:
             text += page_text + "\n"
-
     return text
 
 
 def extract_text_from_uploaded_pdf(uploaded_file):
     reader = PdfReader(uploaded_file)
     text = ""
-
     for page in reader.pages:
         page_text = page.extract_text()
         if page_text:
             text += page_text + "\n"
-
     return text
 
 
 # ============================================================
 # Rule-based donor extraction logic
 # ============================================================
-
 def is_exact_donor_result_page(url):
     lower = (url or "").lower()
-
     exact_signals = [
         "business-and-agency-donors", "business-donors", "agency-donors",
         "individual-donors", "foundation-donors", "corporate-donors",
@@ -1415,17 +1377,14 @@ def is_exact_donor_result_page(url):
         "funders", "supporters", "sponsors", "contributors", "donor-impact",
         "gratitude-report"
     ]
-
     return any(signal in lower for signal in exact_signals)
 
 
 def is_donor_section_heading(line, source_org=""):
     line = normalize_money_dash(line.strip())
     lower = line.lower()
-
     if not line:
         return False
-
     reject_words = [
         "donated", "surpassed", "because", "every", "we ", "our ", "their ",
         "this year", "since", "average", "funds", "grants", "participants",
@@ -1437,10 +1396,8 @@ def is_donor_section_heading(line, source_org=""):
         "program", "programs", "translation", "translations", "recognition",
         "recognitions", "award", "awards", "press", "news"
     ]
-
     if any(word in lower for word in reject_words):
         return False
-
     exact_headings = [
         "donors", "supporters", "sponsors", "funders", "foundations",
         "contributors", "business and agency donors", "individual donors",
@@ -1452,19 +1409,14 @@ def is_donor_section_heading(line, source_org=""):
         "agency donors", "foundation donors", "visionary partners",
         "mission partners", "leadership partners"
     ]
-
     if lower in exact_headings:
         return True
-
     if re.fullmatch(r"\d{4}\s+annual fund donors", lower):
         return True
-
     if re.fullmatch(r"(individual|business|agency|foundation|corporate)\s+donors?\s+\d{4}", lower):
         return True
-
     if re.fullmatch(r"\d{4}\s+(individual|business|agency|foundation|corporate)\s+donors?", lower):
         return True
-
     tier_words = [
         "diamond members", "emerald members", "sapphire members", "ruby members",
         "platinum members", "gold members", "silver members", "bronze members",
@@ -1473,22 +1425,17 @@ def is_donor_section_heading(line, source_org=""):
         "climate supporters", "climate giants", "climate warriors",
         "climate heroes", "climate defenders", "climate contributors"
     ]
-
     if any(tier in lower for tier in tier_words):
         return True
-
     if re.fullmatch(r"\$[\d,]+\s*(\+|and up)", lower):
         return True
-
     if re.fullmatch(r"\$[\d,]+\s*(-|to)\s*\$[\d,]+", lower):
         return True
-
     return False
 
 
 def is_stop_section(line):
     lower = line.lower()
-
     stop_keywords = [
         "board of directors", "staff", "leadership", "contact", "privacy policy",
         "copyright", "financial statements", "statement of activities",
@@ -1499,54 +1446,40 @@ def is_stop_section(line):
         "media features", "advisory council", "youth council", "programs",
         "translations", "recognitions", "recognition for impact"
     ]
-
     return any(stop in lower for stop in stop_keywords)
 
 
 def looks_like_sentence(line):
     words = line.split()
-
     if len(words) > 7:
         return True
-
     sentence_words = [
         "the", "and", "but", "because", "with", "from", "this", "that",
         "these", "those", "through", "across", "during", "for", "into",
         "while", "where", "when", "have", "has", "will", "can", "are",
         "is", "was", "were"
     ]
-
     lower_words = [word.strip(".,!?;:").lower() for word in words]
-
     if len(words) >= 5 and any(word in lower_words for word in sentence_words):
         return True
-
     return False
 
 
 def has_name_shape(line):
     words = line.split()
-
     if not words:
         return False
-
     if line.isupper() and 2 <= len(line) <= 12:
         return True
-
     capitalized_words = 0
-
     for word in words:
         cleaned = word.strip(".,&()[]{}'\"")
-
         if not cleaned:
             continue
-
         if cleaned[0].isupper():
             capitalized_words += 1
-
     if capitalized_words >= 1 and len(words) <= 6:
         return True
-
     org_suffixes = [
         "foundation", "fund", "trust", "inc", "llc", "corp", "corporation",
         "company", "bank", "group", "partners", "association", "institute",
@@ -1554,24 +1487,19 @@ def has_name_shape(line):
         "school", "college", "club", "society", "alliance", "network", "energy",
         "motors", "carbon", "union", "coalition"
     ]
-
     lower = line.lower()
     if any(suffix in lower for suffix in org_suffixes):
         return True
-
     return False
 
 
 def is_probable_name(line):
     line = line.strip()
     lower = line.lower()
-
     if not line:
         return False
-
     if is_donor_section_heading(line):
         return False
-
     bad_words = [
         "donate", "contact", "privacy", "copyright", "annual report",
         "table of contents", "click", "learn more", "email", "phone", "address",
@@ -1602,85 +1530,64 @@ def is_probable_name(line):
         "resource", "resources", "media features", "advisory councils", "young changemakers",
         "young explorers", "read it"
     ]
-
     if len(line) < 2:
         return False
-
     if len(line) > 90:
         return False
-
     if any(word in lower for word in bad_words):
         return False
-
     if "@" in line:
         return False
-
     if lower.startswith("http"):
         return False
-
     if line.replace(" ", "").replace(",", "").replace(".", "").replace("$", "").isdigit():
         return False
-
     letters = re.findall(r"[A-Za-z]", line)
     if len(letters) < 2:
         return False
-
     if looks_like_sentence(line):
         return False
-
     if line.endswith(".") and not line.isupper():
         return False
-
     if len(line) >= 5:
         no_spaces = line.replace(" ", "")
         if line.count(" ") >= len(no_spaces) - 1 and line.isupper():
             return False
-
     if not has_name_shape(line):
         return False
-
     return True
 
 
 def source_looks_like_strong_donor_page(source_url):
     lower = (source_url or "").lower()
-
     strong_signals = [
         "donor", "donors", "funder", "funders", "sponsor", "sponsors",
         "supporter", "supporters", "contributors", "annual-report",
         "impact-report", "gratitude-report", "partners"
     ]
-
     weak_signals_to_avoid_for_fallback = [
         "thank-you", "gratitude", "advisors", "program", "programs",
         "recognition", "recognitions", "press", "media", "news"
     ]
-
     if any(signal in lower for signal in strong_signals) and not any(signal in lower for signal in weak_signals_to_avoid_for_fallback):
         return True
-
     if any(signal in lower for signal in weak_signals_to_avoid_for_fallback):
         return False
-
     return False
 
 
 def source_is_broad_report_page(source_url):
     lower = (source_url or "").lower()
-
     broad_signals = [
         "annual-report", "annual-reports", "impact-report", "impact-reports",
         "/impact", "/about/annual-report", "/about/impact"
     ]
-
     strong_signals = [
         "donor", "donors", "supporter", "supporters", "funder", "funders",
         "sponsor", "sponsors", "contributors"
     ]
-
     has_broad_signal = any(signal in lower for signal in broad_signals)
     has_strong_signal = any(signal in lower for signal in strong_signals)
-
     return has_broad_signal and not has_strong_signal
 
 
@@ -1689,21 +1596,17 @@ def extract_possible_donors_rule_based(text, source_org, source_url):
     irs_context = detect_irs_form_context(source_url, text)
     relationship = normalize_relationship(irs_context.get("default_relationship"), fallback=RELATIONSHIP_FUNDER)
     irs_label = irs_context.get("label", IRS_CONTEXT_NONE)
-
     rows = []
     collecting = False
     current_section = "Possible donor/funder names"
-
     for line in lines:
         if is_donor_section_heading(line, source_org):
             collecting = True
             current_section = line
             continue
-
         if collecting and is_stop_section(line):
             collecting = False
             continue
-
         if collecting and is_probable_name(line):
             rows.append({
                 "Source Organization": source_org or "Unknown organization",
@@ -1718,7 +1621,6 @@ def extract_possible_donors_rule_based(text, source_org, source_url):
                 "Source URL": source_url or "Uploaded PDF",
                 "Extraction Method": "Standard extraction"
             })
-
     if (
         not rows
         and source_looks_like_strong_donor_page(source_url)
@@ -1739,23 +1641,18 @@ def extract_possible_donors_rule_based(text, source_org, source_url):
                     "Source URL": source_url or "Uploaded PDF",
                     "Extraction Method": "Standard extraction"
                 })
-
     df = pd.DataFrame(rows)
     df = clean_extracted_results(df, source_url=source_url)
-
     return df
 
 
 # ============================================================
 # Result cleaning / false-positive control
 # ============================================================
-
 def clean_extracted_results(df, source_url=""):
     if df is None or df.empty:
         return pd.DataFrame(columns=RESULT_COLUMNS)
-
     df = df.copy()
-
     for col in RESULT_COLUMNS:
         if col not in df.columns:
             if col == "Relationship to Source":
@@ -1764,15 +1661,12 @@ def clean_extracted_results(df, source_url=""):
                 df[col] = IRS_CONTEXT_NONE
             else:
                 df[col] = ""
-
     for col in [
         "Donor/Funder Name", "Donor Type", "Relationship to Source", "IRS/Form Context",
         "Section", "Notes", "Source URL", "Extraction Method"
     ]:
         df[col] = df[col].astype(str)
-
     source_lower = str(source_url or "").lower()
-
     false_positive_contexts = [
         "media feature", "media features", "press", "news", "article",
         "advisory council", "youth council", "young changemaker", "young changemakers",
@@ -1780,13 +1674,11 @@ def clean_extracted_results(df, source_url=""):
         "translation", "translations", "recognition", "recognitions",
         "climate and justice leader"
     ]
-
     false_positive_names = {
         "media features", "the guardian", "read it", "forbes", "vice",
         "the washington post", "young changemakers", "young explorers",
         "advisory councils", "who youth council"
     }
-
     donor_context_words = [
         "donor", "donors", "funder", "funders", "sponsor", "sponsors",
         "supporter", "supporters", "contributor", "contributors", "grant",
@@ -1803,29 +1695,22 @@ def clean_extracted_results(df, source_url=""):
         irs_context = str(row.get("IRS/Form Context", "")).lower()
         method = str(row.get("Extraction Method", "")).lower()
         combined = " ".join([name, section, notes, donor_type, relationship, irs_context, source_lower])
-
         if not name or len(name) < 2:
             return False
-
         if name in false_positive_names:
             return False
-
         if any(bad in combined for bad in false_positive_contexts):
             if not any(good in combined for good in donor_context_words):
                 return False
-
         if "program partner" in donor_type or "program partner" in combined:
             if not any(good in combined for good in donor_context_words):
                 return False
-
         if "standard" in method:
             if any(bad in source_lower for bad in ["recognition", "recognitions", "/program", "/programs", "media", "press", "news"]):
                 return False
-
         return True
 
     df = df[df.apply(keep_row, axis=1)]
-
     if not df.empty:
         df["Relationship to Source"] = df["Relationship to Source"].apply(lambda value: normalize_relationship(value, fallback=RELATIONSHIP_FUNDER))
         df.loc[df["IRS/Form Context"].str.strip().eq(""), "IRS/Form Context"] = IRS_CONTEXT_NONE
@@ -1833,43 +1718,32 @@ def clean_extracted_results(df, source_url=""):
         df = df.drop_duplicates(subset=["Dedupe Key", "Source URL"])
         df = df.drop(columns=["Dedupe Key"])
         df = df.reset_index(drop=True)
-
     for col in RESULT_COLUMNS:
         if col not in df.columns:
             df[col] = ""
-
     df = df[RESULT_COLUMNS]
-
     return df
 
 
 # ============================================================
 # Extraction and display helpers
 # ============================================================
-
 def extract_text_from_source(target_url, uploaded_file):
     if uploaded_file is not None:
         return extract_text_from_uploaded_pdf(uploaded_file), "Uploaded PDF"
-
     if target_url:
         source = target_url
-
         if target_url.lower().endswith(".pdf"):
             return extract_text_from_pdf_url(target_url), source
-
         return extract_text_from_webpage(target_url), source
-
     return None, None
 
 
 def extract_from_source(target_url, uploaded_file, source_org, use_ai_flag, model_name, max_ai_chunks):
     text, source = extract_text_from_source(target_url, uploaded_file)
-
     if not text:
         return None, source, ""
-
     ai_note = ""
-
     if use_ai_flag and has_openai_key():
         try:
             ai_df, ai_note = ai_extract_possible_donors(
@@ -1879,19 +1753,15 @@ def extract_from_source(target_url, uploaded_file, source_org, use_ai_flag, mode
                 model_name=model_name,
                 max_chunks=max_ai_chunks
             )
-
             if ai_df is not None and not ai_df.empty:
                 return ai_df, source, ai_note
-
         except Exception as ai_error:
             st.warning(
                 f"AI extraction was unavailable for this source, so the app used standard extraction if this page looked donor-related. Details: {ai_error}"
             )
-
     if source and source_looks_like_strong_donor_page(source):
         rule_df = extract_possible_donors_rule_based(text, source_org, source)
         return rule_df, source, ai_note
-
     return pd.DataFrame(columns=RESULT_COLUMNS), source, ai_note
 
 
@@ -1902,16 +1772,12 @@ def cached_find_pages(homepage_url, top_n):
 
 def normalize_candidate_url(url):
     url = str(url or "").strip()
-
     if not url:
         return ""
-
     parsed = urlparse(url)
     cleaned = parsed._replace(fragment="").geturl()
-
     if cleaned.endswith("/"):
         cleaned = cleaned[:-1]
-
     return cleaned.lower()
 
 
@@ -1945,7 +1811,6 @@ def url_path_lower(url):
 def friendly_page_type(candidate):
     text = candidate_text_blob(candidate)
     path = url_path_lower(candidate.get("url", ""))
-
     if any(signal in text or signal in path for signal in [
         "form 990", "form-990", "form990", "990-pf", "990pf",
         "irs", "schedule i", "nonprofit explorer", "propublica", "grants paid"
@@ -1955,7 +1820,6 @@ def friendly_page_type(candidate):
         if "grants paid" in text or "schedule i" in text:
             return "IRS/Form 990 grants-paid source"
         return "IRS/Form 990 source"
-
     direct_partner_list_phrases = [
         "visionary partners", "mission partners", "leadership partners",
         "corporate partners", "foundation partners", "our partners",
@@ -1963,7 +1827,6 @@ def friendly_page_type(candidate):
     ]
     if any(phrase in text for phrase in direct_partner_list_phrases):
         return "Direct partner/donor list page"
-
     if ".pdf" in path or "pdf" in text:
         if "donor" in text and "impact" in text:
             return "Donor impact PDF"
@@ -1999,10 +1862,8 @@ def is_low_quality_discovery_page(candidate):
     text = candidate_text_blob(candidate)
     path = url_path_lower(candidate.get("url", ""))
     title = str(candidate.get("title", "")).lower()
-
     if is_irs_candidate_source(candidate):
         return False
-
     hard_bad_path_bits = [
         "/node/", "/en-espanol/", "/espanol", "/es/", "/fr/", "/de/",
         "/blog", "/blogs", "/news", "/newsroom", "/press", "/media",
@@ -2010,21 +1871,17 @@ def is_low_quality_discovery_page(candidate):
         "/careers", "/jobs", "/volunteer", "/recipes", "/recipe",
         "/programs", "/program", "/recognitions", "/recognition"
     ]
-
     if any(bit in path for bit in hard_bad_path_bits):
         if not any(good in text for good in ["donor", "fund", "sponsor", "supporter", "contributor", "annual report", "donor impact", "gratitude"]):
             return True
-
     weak_title_bits = [
         "en español", "español", "blog", "news", "press", "recipe",
         "volunteer", "careers", "event", "homepage", "programs",
         "recognitions", "recognition", "media features"
     ]
-
     if any(bit in title for bit in weak_title_bits):
         if not any(good in text for good in ["donor", "funder", "sponsor", "supporter", "annual report", "donor impact"]):
             return True
-
     page_type = friendly_page_type(candidate).lower()
     if page_type == "possible donor-related page" and not any(
         good in text for good in [
@@ -2034,7 +1891,6 @@ def is_low_quality_discovery_page(candidate):
         ]
     ):
         return True
-
     return False
 
 
@@ -2042,20 +1898,16 @@ def page_specificity_score(candidate):
     text = candidate_text_blob(candidate)
     path = url_path_lower(candidate.get("url", ""))
     title = str(candidate.get("title", "")).lower()
-
     try:
         score = int(candidate.get("score", 60))
     except Exception:
         score = 60
-
     if "/node/" in path or "/en-espanol/" in path or "/espanol" in path:
         score -= 300
-
     if is_irs_candidate_source(candidate):
         score += 35
         if "grants paid" in text or "schedule i" in text or "990-pf" in text or "990pf" in text:
             score += 20
-
     best_path_bits = [
         "/partners", "/about/partners", "/corporate-and-foundation",
         "/foundations", "/foundation", "/donors", "/supporters",
@@ -2064,7 +1916,6 @@ def page_specificity_score(candidate):
     for bit in best_path_bits:
         if bit in path:
             score += 160
-
     report_path_bits = [
         "/annual-report", "/annual-reports", "/financials",
         "/impact-report", "/impact-reports", "/donor-impact"
@@ -2072,7 +1923,6 @@ def page_specificity_score(candidate):
     for bit in report_path_bits:
         if bit in path:
             score += 65
-
     strong_title_phrases = [
         "visionary partners", "mission partners", "leadership partners",
         "corporate partners", "foundation partners", "our partners",
@@ -2085,7 +1935,6 @@ def page_specificity_score(candidate):
     for phrase in strong_title_phrases:
         if phrase in title or phrase in text:
             score += 42
-
     page_type = friendly_page_type(candidate).lower()
     if page_type in [
         "direct partner/donor list page",
@@ -2102,7 +1951,6 @@ def page_specificity_score(candidate):
         score += 25
     elif page_type == "possible donor-related page":
         score -= 110
-
     informational_phrases = [
         "how foundations partner", "why i partner", "ways to give",
         "how to partner", "become a partner", "partner with us",
@@ -2111,7 +1959,6 @@ def page_specificity_score(candidate):
     for phrase in informational_phrases:
         if phrase in title or phrase in text or phrase in path:
             score -= 130
-
     bad_context_bits = [
         "/blog", "/blogs", "/news", "/newsroom", "/press", "/media",
         "/article", "/articles", "/story", "/stories", "/events", "/event",
@@ -2121,7 +1968,6 @@ def page_specificity_score(candidate):
     for bit in bad_context_bits:
         if bit in path:
             score -= 160
-
     weak_title_bits = [
         "blog", "news", "press", "recipe", "volunteer", "careers",
         "event", "en español", "español", "homepage", "about us", "our work",
@@ -2130,14 +1976,11 @@ def page_specificity_score(candidate):
     for bit in weak_title_bits:
         if bit in title:
             score -= 80
-
     found_year = extract_year_from_url(candidate.get("url", ""))
     if found_year:
         score += max(0, min(60, (found_year - 2010) * 4))
-
     if page_type == "possible donor-related page" and not any(bit in path for bit in best_path_bits + report_path_bits):
         score -= 140
-
     return score
 
 
@@ -2155,7 +1998,6 @@ def match_strength_label(score):
         score = int(score)
     except Exception:
         score = 0
-
     if score >= 120:
         return "Best match"
     if score >= 75:
@@ -2169,20 +2011,16 @@ def readable_candidate_label(candidate):
     page_type = friendly_page_type(candidate)
     domain = get_domain_label(candidate.get("url", ""))
     title = str(candidate.get("title", "")).strip()
-
     if not title or title.lower() in ["found page", "ai-found page", "page", "unknown"]:
         return f"{strength} — {page_type} — {domain}"
-
     if len(title) > 58:
         title = title[:55].rstrip() + "..."
-
     return f"{strength} — {page_type} — {domain} — {title}"
 
 
 @st.cache_data(show_spinner=False, ttl=3600)
 def check_url_status(url):
     url = str(url or "").strip()
-
     if not url.startswith("http"):
         return {
             "url": url,
@@ -2192,12 +2030,10 @@ def check_url_status(url):
             "is_usable": False,
             "message": "This does not look like a valid web link."
         }
-
     headers = {
         "User-Agent": "Mozilla/5.0 donor-funder-extraction-tool/2.3",
         "Accept": "text/html,application/pdf,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
-
     try:
         response = requests.get(
             url,
@@ -2209,7 +2045,6 @@ def check_url_status(url):
         status_code = response.status_code
         final_url = response.url
         response.close()
-
         if 200 <= status_code < 400:
             return {
                 "url": url,
@@ -2219,7 +2054,6 @@ def check_url_status(url):
                 "is_usable": True,
                 "message": "This page opened successfully."
             }
-
         if status_code == 404:
             return {
                 "url": url,
@@ -2229,7 +2063,6 @@ def check_url_status(url):
                 "is_usable": False,
                 "message": "This page no longer exists or could not be found."
             }
-
         if status_code in [401, 403]:
             return {
                 "url": url,
@@ -2239,7 +2072,6 @@ def check_url_status(url):
                 "is_usable": False,
                 "message": "The website blocked automated access to this page."
             }
-
         return {
             "url": url,
             "final_url": final_url,
@@ -2248,7 +2080,6 @@ def check_url_status(url):
             "is_usable": False,
             "message": f"The page returned HTTP status {status_code}."
         }
-
     except requests.exceptions.Timeout:
         return {
             "url": url,
@@ -2272,7 +2103,6 @@ def check_url_status(url):
 def filter_usable_candidate_pages(candidates):
     usable = []
     skipped = []
-
     for candidate in candidates or []:
         status = check_url_status(candidate.get("url", ""))
         candidate = dict(candidate)
@@ -2280,11 +2110,9 @@ def filter_usable_candidate_pages(candidates):
         candidate["status_code"] = status["status_code"]
         candidate["status_message"] = status["message"]
         candidate["final_url"] = status["final_url"]
-
         if status["is_usable"]:
             if status.get("final_url") and status["final_url"] != candidate.get("url"):
                 candidate["url"] = status["final_url"]
-
             if is_low_quality_discovery_page(candidate):
                 candidate["page_status"] = "Skipped as low-quality match"
                 candidate["status_message"] = "This page opens, but looks like a translated, generic, program, recognition, news/blog, or CMS page rather than a clean donor/funder source."
@@ -2293,21 +2121,17 @@ def filter_usable_candidate_pages(candidates):
                 usable.append(candidate)
         else:
             skipped.append(candidate)
-
     usable = rerank_candidate_pages(usable)
     return usable, skipped
 
 
 def merge_candidate_pages(rule_candidates, ai_candidates):
     merged = {}
-
     for candidate in rule_candidates or []:
         url = candidate.get("url", "")
         key = normalize_candidate_url(url)
-
         if not key:
             continue
-
         merged[key] = {
             "score": int(candidate.get("score", 60)),
             "url": url,
@@ -2317,14 +2141,11 @@ def merge_candidate_pages(rule_candidates, ai_candidates):
             "year": str(extract_year_from_url(url) or "Unknown"),
             "method": "Website scan"
         }
-
     for candidate in ai_candidates or []:
         url = candidate.get("url", "")
         key = normalize_candidate_url(url)
-
         if not key:
             continue
-
         if key in merged:
             merged[key]["score"] = max(merged[key]["score"], int(candidate.get("score", 90)))
             merged[key]["method"] = "Website scan + AI"
@@ -2335,10 +2156,8 @@ def merge_candidate_pages(rule_candidates, ai_candidates):
                 merged[key]["year"] = candidate.get("year")
         else:
             merged[key] = candidate
-
     results = list(merged.values())
     results = rerank_candidate_pages(results)
-
     return results
 
 
@@ -2354,14 +2173,12 @@ def is_actual_list_source(candidate):
     text = candidate_text_blob(candidate)
     path = url_path_lower(candidate.get("url", ""))
     page_type = friendly_page_type(candidate).lower()
-
     if page_type not in [
         "direct partner/donor list page", "donor page", "supporter page", "sponsor page",
         "funder page", "contributor page", "partner page", "corporate partners page",
         "corporate/foundation partners page", "foundation/funder page"
     ]:
         return False
-
     weak_info = [
         "how foundations partner", "why i partner", "ways to give", "how to partner",
         "become a partner", "partner with us", "/ways-to-give/corporate-and-foundations/foundations"
@@ -2369,11 +2186,9 @@ def is_actual_list_source(candidate):
     if any(bit in text or bit in path for bit in weak_info):
         if not any(strong in text for strong in ["visionary partners", "mission partners", "leadership partners", "our partners", "donor list", "supporter list"]):
             return False
-
     bad_context = ["/program", "/programs", "/recognition", "/recognitions", "/press", "/media", "/news"]
     if any(bit in path for bit in bad_context):
         return False
-
     return True
 
 
@@ -2399,93 +2214,69 @@ def get_current_latest_candidate_urls(manual_url=""):
     manual_url = (manual_url or "").strip()
     if manual_url:
         return [manual_url]
-
     candidates = [c for c in st.session_state.candidate_pages if is_useful_extraction_candidate(c)]
     if not candidates:
         return []
-
     direct_pages = [c for c in candidates if is_actual_list_source(c)]
     report_pages = [c for c in candidates if is_report_or_pdf_source(c) or is_exact_donor_result_page(c.get("url", ""))]
-
     direct_pages = sorted(direct_pages, key=lambda c: c.get("display_score", page_specificity_score(c)), reverse=True)
-
     dated_reports = [(candidate_year(c), c) for c in report_pages if candidate_year(c)]
     newest_report_pages = []
     if dated_reports:
         newest_year = max(year for year, _ in dated_reports)
         newest_report_pages = [c for year, c in dated_reports if year == newest_year]
         newest_report_pages = sorted(newest_report_pages, key=lambda c: c.get("display_score", page_specificity_score(c)), reverse=True)
-
     selected = []
     for c in direct_pages[:2] + newest_report_pages[:2]:
         url = c.get("url", "")
         if url and url not in selected:
             selected.append(url)
-
     if not selected and st.session_state.candidate_pages:
         selected.append(st.session_state.candidate_pages[0].get("url", ""))
-
     return [url for url in selected if url]
 
 
 def get_candidate_urls_for_extraction(mode="all", manual_url=""):
     if mode in ["current", "newest"]:
         return get_current_latest_candidate_urls(manual_url=manual_url)
-
     candidate_urls = []
-
     for candidate in st.session_state.candidate_pages:
         candidate_url = candidate.get("url", "")
-
         if not is_useful_extraction_candidate(candidate):
             continue
-
         candidate_urls.append(candidate_url)
-
     candidate_urls = list(dict.fromkeys([url for url in candidate_urls if url]))
-
     return candidate_urls
 
 
 def combine_and_clean_results(all_results, dedupe_across_pages=False):
     combined_df = pd.concat(all_results, ignore_index=True)
     combined_df = clean_extracted_results(combined_df)
-
     if combined_df.empty:
         return combined_df
-
     combined_df["Dedupe Key"] = combined_df["Donor/Funder Name"].apply(normalize_name_for_dedupe)
-
     if dedupe_across_pages:
         combined_df = combined_df.drop_duplicates(subset=["Dedupe Key"])
     else:
         combined_df = combined_df.drop_duplicates(subset=["Dedupe Key", "Source URL"])
-
     combined_df = combined_df.drop(columns=["Dedupe Key"])
     combined_df = combined_df.reset_index(drop=True)
-
     for col in RESULT_COLUMNS:
         if col not in combined_df.columns:
             combined_df[col] = ""
     combined_df = combined_df[RESULT_COLUMNS]
-
     return combined_df
 
 
 def show_extraction_summary(result_df, years_display_override=None):
     if result_df is None or result_df.empty:
         return
-
     temp_df = result_df.copy()
-
     if "Year" not in temp_df.columns:
         temp_df["Year"] = temp_df["Source URL"].apply(extract_year_from_url)
-
     if "Relationship to Source" not in temp_df.columns:
         temp_df["Relationship to Source"] = RELATIONSHIP_FUNDER
-
     temp_df["Dedupe Key"] = temp_df["Donor/Funder Name"].apply(normalize_name_for_dedupe)
-
     total_rows = len(temp_df)
     unique_names = temp_df["Dedupe Key"].nunique()
     pages_used = temp_df["Source URL"].nunique()
@@ -2494,12 +2285,10 @@ def show_extraction_summary(result_df, years_display_override=None):
         str(year).strip() for year in temp_df["Year"].dropna().unique()
         if str(year).strip().lower() not in ["", "unknown", "none", "nan"]
     ]
-
     numeric_years = sorted({
         int(year) for year in raw_years
         if re.fullmatch(r"20\d{2}", year)
     })
-
     if years_display_override:
         years_display = years_display_override
     elif not numeric_years:
@@ -2510,23 +2299,18 @@ def show_extraction_summary(result_df, years_display_override=None):
         years_display = ", ".join(str(year) for year in numeric_years)
     else:
         years_display = f"Multiple years ({numeric_years[0]}–{numeric_years[-1]})"
-
     st.subheader("Extraction summary")
-
     col1, col2, col3, col4, col5 = st.columns(5)
-
     col1.metric("Total rows", total_rows)
     col2.metric("Unique names", unique_names)
     col3.metric("Pages used", pages_used)
     col4.metric("Years included", years_display)
     col5.metric("Grantee/recipient review", grantee_review_count)
-
     if total_rows != unique_names:
         st.info(
             "Some names may appear on multiple pages or across multiple years. "
             "The CSV keeps Source URL and Section so those appearances can be reviewed."
         )
-
     if grantee_review_count:
         st.warning(
             "Some rows are labeled as likely grantees/recipients. These are probably organizations receiving money from a filing organization, not donors to the source organization. Review before using them as funders."
@@ -2537,26 +2321,20 @@ def show_results(result_df, source_org, ai_note="", years_display_override=None)
     if result_df is None:
         st.warning("Please provide a valid source.")
         return
-
     if result_df.empty:
         st.warning(
             "No clear donor/funder names were extracted from this source. "
             "Try a more specific donor, supporter, sponsor, funder, contributor, annual report, IRS/Form 990, or donor PDF page."
         )
         return
-
     if ai_note:
         with st.expander("AI source assessment", expanded=False):
             st.write(ai_note)
-
     show_extraction_summary(result_df, years_display_override=years_display_override)
-
     st.success(f"Extracted {len(result_df)} possible donor/funder or IRS/Form 990 relationship rows.")
     st.info("Please review results before using them. Pay special attention to Relationship to Source, IRS/Form Context, confidence, and notes.")
     st.dataframe(result_df, use_container_width=True)
-
     csv = result_df.to_csv(index=False).encode("utf-8")
-
     safe_org = re.sub(r"[^a-zA-Z0-9]+", "_", source_org.lower()).strip("_") or "organization"
     st.download_button(
         label="Download results as CSV",
@@ -2568,21 +2346,17 @@ def show_results(result_df, source_org, ai_note="", years_display_override=None)
 
 def run_multi_page_extraction(mode="all", manual_url=""):
     urls_to_extract = get_candidate_urls_for_extraction(mode=mode, manual_url=manual_url)
-
     if not urls_to_extract:
         st.warning(
             "No usable donor/funder source pages were found for this extraction mode. "
             "Try pasting a specific donor, supporter, partner, annual report, IRS/Form 990, or PDF URL into the override box."
         )
         return
-
     all_results = []
     is_current_mode = mode in ["current", "newest"]
     label = "current/latest donors" if is_current_mode else "all years found"
     years_display_override = "Current / latest available" if is_current_mode else None
-
     st.caption(f"Reading {len(urls_to_extract)} source page(s).")
-
     with st.spinner(f"Extracting names from {label}..."):
         for candidate_url in urls_to_extract:
             result_df, selected_source, ai_note = extract_from_source(
@@ -2593,37 +2367,30 @@ def run_multi_page_extraction(mode="all", manual_url=""):
                 model_name=model_name,
                 max_ai_chunks=max_ai_chunks
             )
-
             if result_df is not None and not result_df.empty:
                 all_results.append(result_df)
-
     if not all_results:
         st.warning(
             "No clear donor/funder names were extracted from the found pages. "
             "Try choosing another dropdown page, pasting a direct donor/funder/supporter page, or uploading a PDF."
         )
         return
-
     combined_df = combine_and_clean_results(
         all_results,
         dedupe_across_pages=False
     )
-
     show_results(combined_df, source_org, years_display_override=years_display_override)
 
 
 # ============================================================
 # Main app actions
 # ============================================================
-
 if input_mode == "Find pages from an organization homepage":
-    col1, col2, col3 = st.columns([0.18, 0.18, 0.64])
-
+    col1, col2, col3 = st.columns([0.18, 0.18, 0.64], gap="small")
     with col1:
-        find_clicked = st.button("Find likely pages", type="primary")
-
+        find_clicked = st.button("Find likely pages", type="primary", use_container_width=True)
     with col2:
-        clear_clicked = st.button("Clear found pages")
+        clear_clicked = st.button("Clear found pages", use_container_width=True)
 
     if clear_clicked:
         st.session_state.candidate_pages = []
@@ -2642,11 +2409,9 @@ if input_mode == "Find pages from an organization homepage":
                 rule_candidates = []
                 ai_candidates = []
                 ai_summary = ""
-
                 with st.status("Finding usable donor/funder pages...", expanded=True) as status:
                     st.write("Scanning the organization website for donor, sponsor, supporter, annual report, IRS/Form 990, and PDF links...")
                     rule_candidates = cached_find_pages(homepage_url, top_n=10)
-
                     if use_ai and has_openai_key():
                         st.write("Asking AI to look for stronger public donor/funder page matches...")
                         try:
@@ -2659,16 +2424,12 @@ if input_mode == "Find pages from an organization homepage":
                             st.warning(
                                 f"AI page discovery was unavailable, so the app used regular website scanning only. Details: {ai_error}"
                             )
-
                     st.write("Combining duplicate suggestions...")
                     candidates = merge_candidate_pages(rule_candidates, ai_candidates)
-
                     st.write("Checking which suggested pages actually open...")
                     usable_candidates, skipped_candidates = filter_usable_candidate_pages(candidates)
-
                     st.session_state.skipped_pages = skipped_candidates
                     status.update(label="Page discovery complete", state="complete", expanded=False)
-
                 if not usable_candidates:
                     st.warning(
                         "No usable donor/funder pages were found. The app may have found broken, blocked, or low-quality links only. "
@@ -2680,20 +2441,16 @@ if input_mode == "Find pages from an organization homepage":
                     st.session_state.last_homepage_url = homepage_url
                     st.session_state.last_source_org = source_org
                     st.success(f"Found {len(usable_candidates)} usable page(s).")
-
                     if skipped_candidates:
                         st.info(f"Skipped {len(skipped_candidates)} broken, blocked, unavailable, or low-quality page(s).")
-
                     if ai_summary:
                         st.info(ai_summary)
-
             except Exception as e:
                 st.error(f"Something went wrong while finding pages: {e}")
 
     if st.session_state.candidate_pages:
         st.subheader("Found usable pages")
         st.caption("The app checked the suggested links and only shows pages that appear to open successfully and look relevant.")
-
         if st.session_state.get("skipped_pages"):
             with st.expander(f"Skipped {len(st.session_state.skipped_pages)} broken, blocked, unavailable, or low-quality page(s)", expanded=False):
                 for skipped in st.session_state.skipped_pages:
@@ -2703,33 +2460,26 @@ if input_mode == "Find pages from an organization homepage":
                     code_text = f"HTTP {code}" if code else "No status code"
                     st.write(f"**{status}** ({code_text}) — {skipped.get('url', '')}")
                     st.caption(message)
-
         candidate_options = []
         seen_labels = {}
-
         for idx, candidate in enumerate(st.session_state.candidate_pages, start=1):
             base_label = readable_candidate_label(candidate)
             label_count = seen_labels.get(base_label, 0) + 1
             seen_labels[base_label] = label_count
-
             if label_count > 1:
                 label = f"{base_label} ({label_count})"
             else:
                 label = base_label
-
             candidate_options.append(label)
-
         selected_option = st.selectbox(
             "Review a suggested source page",
             candidate_options,
             key="candidate_page_selectbox",
             help="Best match means the app thinks this page is highly likely to contain donor/funder information. IRS/Form 990 sources should be reviewed carefully for funder vs grantee direction."
         )
-
         selected_index = candidate_options.index(selected_option)
         selected_candidate = st.session_state.candidate_pages[selected_index]
         selected_url = selected_candidate["url"]
-
         with st.expander("Why this page was suggested", expanded=False):
             st.write(selected_candidate.get("reason", "No reason provided."))
             st.write(f"Page type: {friendly_page_type(selected_candidate)}")
@@ -2739,33 +2489,28 @@ if input_mode == "Find pages from an organization homepage":
             if is_irs_candidate_source(selected_candidate):
                 st.warning("This looks like an IRS/Form 990-related source. Review Relationship to Source and IRS/Form Context carefully after extraction.")
             st.caption("The app ranks cleaner donor, partner, supporter, annual report, PDF, and IRS/Form 990 sources higher than generic, translated, program, recognition, newsroom, or broken pages.")
-
         manual_candidate_url = st.text_input(
             "Optional: paste a more specific page URL to extract from instead",
             placeholder="Example: exact individual donors, business donors, annual report, IRS/Form 990, or PDF page"
         )
-
         final_selected_url = manual_candidate_url.strip() if manual_candidate_url.strip() else selected_url
-
         st.caption("Recommended starting source")
         st.write(final_selected_url)
         st.caption("Use the dropdown above to review suggested sources. The buttons below keep the workflow simple: current/latest donors or all years found.")
-
-        col_b, col_c = st.columns([1, 1])
-
+        col_b, col_c = st.columns(2, gap="small")
         with col_b:
             extract_newest = st.button(
                 "Extract current/latest donors",
                 type="primary",
+                use_container_width=True,
                 help="Recommended. Uses the best current direct donor/partner pages and the newest dated sources found."
             )
-
         with col_c:
             extract_all = st.button(
                 "Extract all years found (slower)",
+                use_container_width=True,
                 help="Scans current pages plus older annual reports, donor impact PDFs, IRS/Form 990 sources, and historical sources. This may take longer and use more API credits."
             )
-
         if extract_newest:
             try:
                 run_multi_page_extraction(mode="current", manual_url=manual_candidate_url.strip())
@@ -2780,17 +2525,14 @@ if input_mode == "Find pages from an organization homepage":
                 st.caption(str(e))
             except Exception as e:
                 st.error(f"Something went wrong during current/latest extraction: {e}")
-
         if extract_all:
             try:
                 run_multi_page_extraction(mode="all", manual_url=manual_candidate_url.strip())
             except Exception as e:
                 st.error(f"Something went wrong during all-years extraction: {e}")
 
-
 elif input_mode == "Use an exact webpage or PDF URL":
     st.divider()
-
     if st.button("Extract names", type="primary"):
         if not source_org:
             st.warning("Please enter the source organization name first.")
@@ -2807,9 +2549,7 @@ elif input_mode == "Use an exact webpage or PDF URL":
                         model_name=model_name,
                         max_ai_chunks=max_ai_chunks
                     )
-
                 show_results(result_df, source_org, ai_note=ai_note)
-
             except requests.exceptions.HTTPError as e:
                 status_code = getattr(e.response, "status_code", None)
                 if status_code == 404:
@@ -2830,10 +2570,8 @@ elif input_mode == "Use an exact webpage or PDF URL":
             except Exception as e:
                 st.error(f"Something went wrong: {e}")
 
-
 elif input_mode == "Upload a PDF report":
     st.divider()
-
     if st.button("Extract names", type="primary"):
         if not source_org:
             st.warning("Please enter the source organization name first.")
@@ -2850,17 +2588,16 @@ elif input_mode == "Upload a PDF report":
                         model_name=model_name,
                         max_ai_chunks=max_ai_chunks
                     )
-
                 show_results(result_df, source_org, ai_note=ai_note)
-
             except Exception as e:
                 st.error(f"Something went wrong: {e}")
 
-
 st.divider()
-
-st.caption(
-    "Note: AI improves discovery and extraction, but some websites may block automated access. "
-    "For blocked websites, upload a PDF report or use manual review. Always review results before using them. "
-    "For IRS/Form 990 sources, review Relationship to Source carefully because grant tables may list grantees/recipients rather than donors."
+st.markdown(
+    '<div class="footer-note">'
+    'Note: AI improves discovery and extraction, but some websites may block automated access. '
+    'For blocked websites, upload a PDF report or use manual review. Always review results before using them. '
+    'For IRS/Form 990 sources, review Relationship to Source carefully because grant tables may list grantees/recipients rather than donors.'
+    '</div>',
+    unsafe_allow_html=True
 )

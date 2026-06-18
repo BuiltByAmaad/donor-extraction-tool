@@ -2387,6 +2387,7 @@ def show_extraction_summary(result_df, years_display_override=None):
     unique_names = temp_df["Dedupe Key"].nunique()
     pages_used = temp_df["Source URL"].nunique()
     grantee_review_count = int(temp_df["Relationship to Source"].eq(RELATIONSHIP_GRANTEE).sum())
+    unclear_review_count = int(temp_df["Relationship to Source"].eq(RELATIONSHIP_UNCLEAR).sum())
     raw_years = [
         str(year).strip() for year in temp_df["Year"].dropna().unique()
         if str(year).strip().lower() not in ["", "unknown", "none", "nan"]
@@ -2419,8 +2420,34 @@ def show_extraction_summary(result_df, years_display_override=None):
         )
     if grantee_review_count:
         st.warning(
-            "Some rows are labeled as likely grantees/recipients. These are probably organizations receiving money from a filing organization, not donors to the source organization. Review before using them as funders."
+            f"{grantee_review_count} row(s) are flagged as likely grantees/recipients (shown in amber in the table below). "
+            "On IRS/Form 990 sources these are often organizations receiving money from the filing organization, not donors to the source organization. "
+            "Check the direction of funding before treating any of them as a funder."
         )
+    if unclear_review_count:
+        st.info(
+            f"{unclear_review_count} row(s) are marked 'Unclear / needs review' because the funding direction was not certain. Confirm these before use."
+        )
+
+
+def style_results_dataframe(result_df):
+    """
+    Display-only: color-codes the Relationship to Source column so funders,
+    grantees/recipients, and unclear rows are easy to tell apart at a glance.
+    Falls back to the plain dataframe if styling is unavailable. Does not change
+    the underlying data or the exported CSV.
+    """
+    relationship_styles = {
+        RELATIONSHIP_FUNDER: "background-color: #e0f2fe; color: #075985; font-weight: 600;",
+        RELATIONSHIP_GRANTEE: "background-color: #fef3c7; color: #92400e; font-weight: 600;",
+        RELATIONSHIP_UNCLEAR: "background-color: #f1f5f9; color: #334155; font-weight: 600;",
+    }
+    try:
+        def color_relationship_column(column):
+            return [relationship_styles.get(str(value).strip(), "") for value in column]
+        return result_df.style.apply(color_relationship_column, subset=["Relationship to Source"])
+    except Exception:
+        return result_df
 
 
 def show_results(result_df, source_org, ai_note="", years_display_override=None):
@@ -2439,7 +2466,16 @@ def show_results(result_df, source_org, ai_note="", years_display_override=None)
     show_extraction_summary(result_df, years_display_override=years_display_override)
     st.success(f"Extracted {len(result_df)} possible donor/funder or IRS/Form 990 relationship rows.")
     st.info("Please review results before using them. Pay special attention to Relationship to Source, IRS/Form Context, confidence, and notes.")
-    st.dataframe(result_df, use_container_width=True)
+    st.markdown(
+        '<div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:0.1rem 0 0.6rem;">'
+        '<span style="font-weight:800; color:#475569; font-size:0.85rem; margin-right:4px;">Relationship key:</span>'
+        '<span style="background:#e0f2fe; color:#075985; border:1px solid #bae6fd; border-radius:999px; padding:3px 10px; font-size:0.8rem; font-weight:700;">Likely funder/donor — gave to the source org</span>'
+        '<span style="background:#fef3c7; color:#92400e; border:1px solid #fde68a; border-radius:999px; padding:3px 10px; font-size:0.8rem; font-weight:700;">Likely grantee/recipient — may be receiving money; review</span>'
+        '<span style="background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; border-radius:999px; padding:3px 10px; font-size:0.8rem; font-weight:700;">Unclear — needs review</span>'
+        '</div>',
+        unsafe_allow_html=True
+    )
+    st.dataframe(style_results_dataframe(result_df), use_container_width=True)
     csv = result_df.to_csv(index=False).encode("utf-8")
     safe_org = re.sub(r"[^a-zA-Z0-9]+", "_", source_org.lower()).strip("_") or "organization"
     st.download_button(

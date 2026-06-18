@@ -206,11 +206,11 @@ st.markdown(
 
         .stApp {
             background:
-                radial-gradient(38% 32% at 7% 3%, rgba(239, 68, 68, 0.16), transparent 70%),
-                radial-gradient(36% 30% at 100% 0%, rgba(37, 99, 235, 0.15), transparent 72%),
-                radial-gradient(46% 42% at 96% 100%, rgba(142, 202, 230, 0.18), transparent 75%),
-                radial-gradient(42% 40% at 0% 100%, rgba(23, 40, 90, 0.11), transparent 75%),
-                linear-gradient(180deg, #f7fbfa 0%, #eef4f6 100%);
+                radial-gradient(42% 38% at 17% 0%, rgba(239, 68, 68, 0.20), transparent 70%),
+                radial-gradient(42% 38% at 83% 0%, rgba(37, 99, 235, 0.18), transparent 72%),
+                radial-gradient(48% 44% at 88% 100%, rgba(142, 202, 230, 0.20), transparent 75%),
+                radial-gradient(46% 42% at 12% 100%, rgba(23, 40, 90, 0.13), transparent 75%),
+                linear-gradient(180deg, #f6fbfa 0%, #edf3f6 100%);
             background-attachment: fixed;
             color: var(--cc-ink);
         }
@@ -238,13 +238,18 @@ st.markdown(
 
         /* ---------- Header card ---------- */
         .brand-shell {
-            background: rgba(255, 255, 255, 0.72);
-            -webkit-backdrop-filter: blur(16px) saturate(140%);
-            backdrop-filter: blur(16px) saturate(140%);
-            border: 1px solid rgba(255, 255, 255, 0.65);
+            background:
+                linear-gradient(125deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.10) 24%, rgba(255, 255, 255, 0) 50%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.42));
+            -webkit-backdrop-filter: blur(22px) saturate(165%);
+            backdrop-filter: blur(22px) saturate(165%);
+            border: 1px solid rgba(255, 255, 255, 0.7);
             border-radius: 24px;
             padding: 1.7rem 1.9rem 1.8rem 1.9rem;
-            box-shadow: 0 20px 50px rgba(15, 32, 51, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+            box-shadow:
+                0 24px 56px rgba(15, 32, 51, 0.14),
+                inset 0 1px 0 rgba(255, 255, 255, 0.85),
+                inset 0 -1px 0 rgba(15, 32, 51, 0.05);
             margin-bottom: 1.6rem;
             position: relative;
             overflow: hidden;
@@ -326,13 +331,16 @@ st.markdown(
             margin-top: 1.1rem;
         }
         .pill {
-            border: 1px solid #cfe6f2;
-            background: #eef7fb;
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.32));
+            -webkit-backdrop-filter: blur(8px) saturate(150%);
+            backdrop-filter: blur(8px) saturate(150%);
             color: #17285a;
             border-radius: 999px;
             padding: 0.44rem 0.8rem;
             font-size: 0.82rem;
             font-weight: 800;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 2px 8px rgba(15, 32, 51, 0.08);
         }
         @media (max-width: 820px) {
             .brand-shell {
@@ -665,22 +673,29 @@ st.markdown(
         /* ====================================================== */
         .stButton > button,
         .stDownloadButton > button {
-            background: #ffffff !important;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.4)) !important;
             color: var(--cc-ink) !important;
+            -webkit-backdrop-filter: blur(10px) saturate(150%);
+            backdrop-filter: blur(10px) saturate(150%);
+            border: 1px solid rgba(255, 255, 255, 0.7) !important;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 6px 16px rgba(15, 32, 51, 0.10) !important;
         }
         .stButton > button:hover,
         .stDownloadButton > button:hover {
-            background: #ffffff !important;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.56)) !important;
             color: var(--cc-ink) !important;
+            border-color: rgba(255, 255, 255, 0.9) !important;
         }
         .stButton > button[kind="primary"],
         .stButton > button[kind="primary"]:hover {
-            background: linear-gradient(135deg, var(--cc-red), var(--cc-red-dark)) !important;
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.94), rgba(185, 28, 28, 0.94)) !important;
             color: #ffffff !important;
+            border: 1px solid rgba(255, 255, 255, 0.4) !important;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 12px 26px rgba(185, 28, 28, 0.3) !important;
         }
         .stButton > button:disabled,
         .stButton > button[disabled] {
-            background: #f1f5f9 !important;
+            background: #eef2f6 !important;
             color: #94a3b8 !important;
         }
 
